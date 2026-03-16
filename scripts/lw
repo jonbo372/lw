@@ -23,6 +23,39 @@ require() {
   done
 }
 
+# Run hook scripts from ~/.lw/<phase>/ (global) and .lw/<phase>/ (repo) in sorted order.
+# Scripts are named like s10foo.sh, s50bar.sh to control execution order.
+# Global hooks run first, then repo-local hooks.
+# Exported env vars: LW_WORKTREE_DIR, LW_BRANCH, LW_TICKET, LW_REPO_NAME, LW_ACTION,
+#                    LW_TMUX_WINDOW (set if running inside tmux)
+run_hooks() {
+  local phase="$1"  # "setup" or "teardown"
+  local global_dir="$HOME/.lw/$phase"
+  local repo_dir="$GIT_ROOT/.lw/$phase"
+
+  local scripts=()
+  for hook_dir in "$global_dir" "$repo_dir"; do
+    [[ -d "$hook_dir" ]] || continue
+    while IFS= read -r -d '' f; do
+      scripts+=("$f")
+    done < <(find "$hook_dir" -maxdepth 1 -type f -executable -print0 | sort -z)
+  done
+
+  [[ ${#scripts[@]} -gt 0 ]] || return 0
+
+  export LW_WORKTREE_DIR="${WORKTREE_DIR:-}"
+  export LW_BRANCH="${BRANCH:-}"
+  export LW_TICKET="${TICKET:-}"
+  export LW_REPO_NAME="${REPO_NAME:-}"
+  export LW_ACTION="$phase"
+  export LW_TMUX_WINDOW="${TMUX_WINDOW_NAME:-}"
+
+  for script in "${scripts[@]}"; do
+    info "Running $phase hook: $(basename "$script")…"
+    (cd "${WORKTREE_DIR:-.}" && "$script") || die "Hook $(basename "$script") failed (exit $?)."
+  done
+}
+
 # ── Route subcommands ─────────────────────────────────────────────────────────
 [[ $# -ge 1 ]] || { echo "Usage: lw <TICKET-ID> | lw done <TICKET-ID> | lw review <branch> | lw done review <branch>" >&2; exit 1; }
 
@@ -71,21 +104,25 @@ if [[ "${1:-}" == "review" ]]; then
   fi
 
   # ── tmux: open a new window for the review ────────────────────────────────
+  TMUX_WINDOW_NAME=""
   if [[ -n "${TMUX:-}" ]]; then
-    WINDOW_NAME="[${REPO_NAME}] review: ${BRANCH}"
-    WINDOW_NAME="${WINDOW_NAME:0:50}"
+    TMUX_WINDOW_NAME="[${REPO_NAME}] review: ${BRANCH}"
+    TMUX_WINDOW_NAME="${TMUX_WINDOW_NAME:0:50}"
 
     EXISTING=$(tmux list-windows -F '#{window_name}' 2>/dev/null \
-      | grep -Fx "$WINDOW_NAME" || true)
+      | grep -Fx "$TMUX_WINDOW_NAME" || true)
 
     if [[ -n "$EXISTING" ]]; then
-      info "tmux window '$WINDOW_NAME' already exists — switching to it…"
-      tmux select-window -t "$WINDOW_NAME"
+      info "tmux window '$TMUX_WINDOW_NAME' already exists — switching to it…"
+      tmux select-window -t "$TMUX_WINDOW_NAME"
     else
-      info "Creating tmux window '$WINDOW_NAME'…"
-      tmux new-window -c "$WORKTREE_DIR" -n "$WINDOW_NAME"
+      info "Creating tmux window '$TMUX_WINDOW_NAME'…"
+      tmux new-window -c "$WORKTREE_DIR" -n "$TMUX_WINDOW_NAME"
     fi
   fi
+
+  # ── Run setup hooks ──────────────────────────────────────────────────────
+  TICKET="" run_hooks setup
 
   echo "$WORKTREE_DIR"
   exit 0
@@ -142,6 +179,19 @@ if [[ "${1:-}" == "done" ]]; then
     fi
   fi
 
+  # ── Resolve the tmux window name (needed by hooks and for closing) ───────
+  TMUX_WINDOW_NAME=""
+  TMUX_WINDOW_INDEX=""
+  if [[ -n "${TMUX:-}" ]]; then
+    read -r TMUX_WINDOW_INDEX TMUX_WINDOW_NAME < <(
+      tmux list-windows -F '#{window_index} #{window_name}' 2>/dev/null \
+        | awk -v t="$WINDOW_PREFIX" '$0 ~ t { print $1, substr($0, index($0,$2)); exit }'
+    ) || true
+  fi
+
+  # ── Run teardown hooks ────────────────────────────────────────────────────
+  run_hooks teardown
+
   # ── Remove the worktree ───────────────────────────────────────────────────
   if [[ -d "$WORKTREE_DIR" ]]; then
     info "Removing worktree at $WORKTREE_DIR…"
@@ -173,11 +223,9 @@ if [[ "${1:-}" == "done" ]]; then
 
   # ── Close the tmux window ─────────────────────────────────────────────────
   if [[ -n "${TMUX:-}" ]]; then
-    WINDOW=$(tmux list-windows -F '#{window_index} #{window_name}' 2>/dev/null \
-      | awk -v t="$WINDOW_PREFIX" '$2 ~ "^"t { print $1; exit }')
-    if [[ -n "$WINDOW" ]]; then
-      info "Closing tmux window $WINDOW…"
-      tmux kill-window -t "$WINDOW"
+    if [[ -n "$TMUX_WINDOW_INDEX" ]]; then
+      info "Closing tmux window $TMUX_WINDOW_INDEX…"
+      tmux kill-window -t "$TMUX_WINDOW_INDEX"
     else
       info "No tmux window found matching '$WINDOW_PREFIX'."
     fi
@@ -273,22 +321,24 @@ else
 fi
 
 # ── tmux: create a new window, name it, and switch to it ─────────────────────
+TMUX_WINDOW_NAME=""
 if [[ -n "${TMUX:-}" ]]; then
-  WINDOW_NAME="[${REPO_NAME}] ${SAFE_TICKET}: ${TITLE}"
-  WINDOW_NAME="${WINDOW_NAME:0:50}"
+  TMUX_WINDOW_NAME="[${REPO_NAME}] ${SAFE_TICKET}: ${TITLE}"
+  TMUX_WINDOW_NAME="${TMUX_WINDOW_NAME:0:50}"
 
   EXISTING=$(tmux list-windows -F '#{window_name}' 2>/dev/null \
-    | grep -Fx "$WINDOW_NAME" || true)
+    | grep -Fx "$TMUX_WINDOW_NAME" || true)
 
   if [[ -n "$EXISTING" ]]; then
-    info "tmux window '$WINDOW_NAME' already exists — switching to it…"
-    tmux select-window -t "$WINDOW_NAME"
+    info "tmux window '$TMUX_WINDOW_NAME' already exists — switching to it…"
+    tmux select-window -t "$TMUX_WINDOW_NAME"
   else
-    info "Creating tmux window '$WINDOW_NAME'…"
-    tmux new-window -c "$WORKTREE_DIR" -n "$WINDOW_NAME"
+    info "Creating tmux window '$TMUX_WINDOW_NAME'…"
+    tmux new-window -c "$WORKTREE_DIR" -n "$TMUX_WINDOW_NAME"
   fi
-
-  echo "$WORKTREE_DIR"
-else
-  echo "$WORKTREE_DIR"
 fi
+
+# ── Run setup hooks ───────────────────────────────────────────────────────────
+run_hooks setup
+
+echo "$WORKTREE_DIR"
