@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+# lw — Linear Worktree
+# Usage:
+#   lw <TICKET-ID>              — create worktree + tmux window for a ticket
+#   lw done <TICKET-ID>         — tear down worktree, branch, and tmux window
+#   lw review <branch>          — pull a branch into a worktree for review
+#   lw done review <branch>     — tear down a review worktree
+
+set -euo pipefail
+
+# ── Configuration ────────────────────────────────────────────────────────────
+WORKTREE_HOME="${WORKTREE_HOME:-$HOME/.superclaude}"   # where worktrees live
+LINEAR_API_KEY="${LINEAR_API_KEY:-}"                    # set in env or here
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+die()  { echo "error: $*" >&2; exit 1; }
+info() { echo "▸ $*" >&2; }
+
+require() {
+  for cmd in "$@"; do
+    command -v "$cmd" &>/dev/null || die "'$cmd' is required but not installed."
+  done
+}
+
+# ── Route subcommands ─────────────────────────────────────────────────────────
+[[ $# -ge 1 ]] || { echo "Usage: lw <TICKET-ID> | lw done <TICKET-ID> | lw review <branch> | lw done review <branch>" >&2; exit 1; }
+
+# ══════════════════════════════════════════════════════════════════════════════
+# lw review <branch> — pull a branch into a worktree for review
+# ══════════════════════════════════════════════════════════════════════════════
+if [[ "${1:-}" == "review" ]]; then
+  [[ $# -eq 2 ]] || die "Usage: lw review <branch>"
+  BRANCH="$2"
+  require git
+
+  GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
+  REPO_NAME="$(basename "$GIT_ROOT")"
+
+  # ── Verify the branch exists locally or on origin — bail if neither ───────
+  LOCAL_EXISTS=false
+  REMOTE_EXISTS=false
+
+  git show-ref --verify --quiet "refs/heads/$BRANCH"           2>/dev/null && LOCAL_EXISTS=true  || true
+  git fetch origin "$BRANCH" 2>/dev/null                                    && REMOTE_EXISTS=true || true
+  git show-ref --verify --quiet "refs/remotes/origin/$BRANCH"  2>/dev/null && REMOTE_EXISTS=true || true
+
+  if ! $LOCAL_EXISTS && ! $REMOTE_EXISTS; then
+    die "Branch '$BRANCH' not found locally or on origin."
+  fi
+
+  # Ensure a local tracking branch exists
+  if ! $LOCAL_EXISTS; then
+    info "Creating local branch '$BRANCH' from origin…"
+    git branch "$BRANCH" "origin/$BRANCH"
+  fi
+
+  # ── Derive a filesystem-safe dir name from the branch ─────────────────────
+  # e.g. "feature/auth-redesign" → "review-feature-auth-redesign"
+  SAFE_BRANCH="review-${BRANCH//\//-}"
+  WORKTREE_DIR="$WORKTREE_HOME/$REPO_NAME/$SAFE_BRANCH"
+
+  mkdir -p "$(dirname "$WORKTREE_DIR")"
+
+  if [[ -d "$WORKTREE_DIR" ]]; then
+    info "Worktree already exists at $WORKTREE_DIR"
+  else
+    info "Creating review worktree at $WORKTREE_DIR…"
+    git worktree add "$WORKTREE_DIR" "$BRANCH"
+    info "Done."
+  fi
+
+  # ── tmux: open a new window for the review ────────────────────────────────
+  if [[ -n "${TMUX:-}" ]]; then
+    WINDOW_NAME="[${REPO_NAME}] review: ${BRANCH}"
+    WINDOW_NAME="${WINDOW_NAME:0:50}"
+
+    EXISTING=$(tmux list-windows -F '#{window_name}' 2>/dev/null \
+      | grep -Fx "$WINDOW_NAME" || true)
+
+    if [[ -n "$EXISTING" ]]; then
+      info "tmux window '$WINDOW_NAME' already exists — switching to it…"
+      tmux select-window -t "$WINDOW_NAME"
+    else
+      info "Creating tmux window '$WINDOW_NAME'…"
+      tmux new-window -c "$WORKTREE_DIR" -n "$WINDOW_NAME"
+    fi
+  fi
+
+  echo "$WORKTREE_DIR"
+  exit 0
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# lw done [review] <TICKET-ID|branch> — teardown
+# ══════════════════════════════════════════════════════════════════════════════
+if [[ "${1:-}" == "done" ]]; then
+  IS_REVIEW=false
+  if [[ "${2:-}" == "review" ]]; then
+    IS_REVIEW=true
+    [[ $# -eq 3 ]] || die "Usage: lw done review <branch>"
+    BRANCH="$3"
+    SAFE_DIR="review-${BRANCH//\//-}"
+    WINDOW_PREFIX="[${REPO_NAME}] review:"
+  else
+    [[ $# -eq 2 ]] || die "Usage: lw done <TICKET-ID>"
+    BRANCH=""   # resolved from worktree below
+    TICKET="${2^^}"
+    SAFE_DIR="${TICKET/\//-}"
+    WINDOW_PREFIX="[${REPO_NAME}] ${SAFE_DIR}"
+  fi
+  require git
+
+  GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
+  REPO_NAME="$(basename "$GIT_ROOT")"
+  WORKTREE_DIR="$WORKTREE_HOME/$REPO_NAME/$SAFE_DIR"
+
+  # ── Resolve branch name from the worktree (no API call needed) ────────────
+  if [[ -d "$WORKTREE_DIR" ]]; then
+    BRANCH=$(git -C "$WORKTREE_DIR" symbolic-ref --short HEAD 2>/dev/null || true)
+  fi
+
+  # ── Warn about uncommitted changes ────────────────────────────────────────
+  if [[ -d "$WORKTREE_DIR" ]]; then
+    DIRTY=$(git -C "$WORKTREE_DIR" status --porcelain 2>/dev/null || true)
+    if [[ -n "$DIRTY" ]]; then
+      echo "warning: worktree has uncommitted changes:" >&2
+      git -C "$WORKTREE_DIR" status --short >&2
+      read -r -p "Continue with teardown anyway? [y/N] " CONFIRM
+      [[ "${CONFIRM,,}" == "y" ]] || { info "Aborted."; exit 0; }
+    fi
+  fi
+
+  # ── Warn about unpushed commits (skip for review — it's read-only) ────────
+  if ! $IS_REVIEW && [[ -n "$BRANCH" && -d "$WORKTREE_DIR" ]]; then
+    LOCAL=$(git -C "$WORKTREE_DIR" rev-parse HEAD 2>/dev/null || true)
+    REMOTE=$(git -C "$WORKTREE_DIR" rev-parse "origin/$BRANCH" 2>/dev/null || true)
+    if [[ -n "$LOCAL" && -n "$REMOTE" && "$LOCAL" != "$REMOTE" ]]; then
+      echo "warning: branch '$BRANCH' has commits not pushed to origin." >&2
+      read -r -p "Continue with teardown anyway? [y/N] " CONFIRM
+      [[ "${CONFIRM,,}" == "y" ]] || { info "Aborted."; exit 0; }
+    fi
+  fi
+
+  # ── Remove the worktree ───────────────────────────────────────────────────
+  if [[ -d "$WORKTREE_DIR" ]]; then
+    info "Removing worktree at $WORKTREE_DIR…"
+    git worktree remove --force "$WORKTREE_DIR"
+    git worktree prune 2>/dev/null || true
+  else
+    info "No worktree found at $WORKTREE_DIR — skipping."
+  fi
+
+  # ── Delete the local branch ───────────────────────────────────────────────
+  # For reviews, only delete if it didn't exist before (i.e. we fetched it)
+  if [[ -n "$BRANCH" ]] && git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    if $IS_REVIEW; then
+      # Only remove if there's no other worktree using this branch
+      IN_USE=$(git worktree list --porcelain 2>/dev/null \
+        | awk '/^branch / { print $2 }' \
+        | grep -Fx "refs/heads/$BRANCH" || true)
+      if [[ -z "$IN_USE" ]]; then
+        info "Deleting local branch '$BRANCH'…"
+        git branch -D "$BRANCH"
+      else
+        info "Branch '$BRANCH' still in use by another worktree — leaving it."
+      fi
+    else
+      info "Deleting local branch '$BRANCH'…"
+      git branch -D "$BRANCH"
+    fi
+  fi
+
+  # ── Close the tmux window ─────────────────────────────────────────────────
+  if [[ -n "${TMUX:-}" ]]; then
+    WINDOW=$(tmux list-windows -F '#{window_index} #{window_name}' 2>/dev/null \
+      | awk -v t="$WINDOW_PREFIX" '$2 ~ "^"t { print $1; exit }')
+    if [[ -n "$WINDOW" ]]; then
+      info "Closing tmux window $WINDOW…"
+      tmux kill-window -t "$WINDOW"
+    else
+      info "No tmux window found matching '$WINDOW_PREFIX'."
+    fi
+  fi
+
+  info "Done. ${BRANCH:-$SAFE_DIR} torn down."
+  exit 0
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# lw <TICKET-ID> — create worktree
+# ══════════════════════════════════════════════════════════════════════════════
+[[ $# -eq 1 ]] || die "Usage: lw <TICKET-ID> | lw done <TICKET-ID> | lw review <branch>"
+TICKET="${1^^}"   # normalise to upper-case
+
+# ── Pre-flight checks ─────────────────────────────────────────────────────────
+require git curl jq
+[[ -n "$LINEAR_API_KEY" ]] || die "LINEAR_API_KEY is not set. Export it or hardcode it in this script."
+
+# Must be run from inside a git repo
+GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
+REPO_NAME="$(basename "$GIT_ROOT")"
+
+# ── Fetch branch from Linear API ──────────────────────────────────────────────
+info "Fetching branch for $TICKET from Linear…"
+
+QUERY=$(cat <<EOF
+{ "query": "{ issue(id: \"$TICKET\") { branchName title } }" }
+EOF
+)
+
+RESPONSE=$(curl -s \
+  -H "Authorization: $LINEAR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "$QUERY" \
+  "https://api.linear.app/graphql")
+
+# Check for API-level errors
+API_ERROR=$(echo "$RESPONSE" | jq -r '.errors[0].message // empty')
+[[ -z "$API_ERROR" ]] || die "Linear API error: $API_ERROR"
+
+BRANCH=$(echo "$RESPONSE" | jq -r '.data.issue.branchName // empty')
+TITLE=$(echo  "$RESPONSE" | jq -r '.data.issue.title // empty')
+
+[[ -n "$BRANCH" ]] || die "Could not find a branch for ticket $TICKET. Check the ticket ID and your API key."
+
+info "Found: \"$TITLE\""
+info "Branch: $BRANCH"
+
+# ── Ensure the branch exists locally (fetch or create off default) ────────────
+if ! git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  if git fetch origin "$BRANCH":"$BRANCH" 2>/dev/null; then
+    info "Fetched '$BRANCH' from origin."
+  else
+    info "Branch not found on origin — detecting default branch…"
+    DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null \
+      | sed 's|refs/remotes/origin/||') || DEFAULT_BRANCH=""
+
+    if [[ -z "$DEFAULT_BRANCH" ]]; then
+      git fetch origin 2>/dev/null || true
+      for candidate in main master trunk develop; do
+        if git show-ref --verify --quiet "refs/remotes/origin/$candidate"; then
+          DEFAULT_BRANCH="$candidate"
+          break
+        fi
+      done
+    fi
+
+    [[ -n "$DEFAULT_BRANCH" ]] \
+      || die "Could not determine the default branch. Set it with: git remote set-head origin --auto"
+
+    info "Creating '$BRANCH' off '$DEFAULT_BRANCH'…"
+    git fetch origin "$DEFAULT_BRANCH":"$DEFAULT_BRANCH" 2>/dev/null || true
+    git branch "$BRANCH" "$DEFAULT_BRANCH"
+  fi
+fi
+
+git show-ref --verify --quiet "refs/heads/$BRANCH" \
+  || die "Branch '$BRANCH' could not be created."
+
+# ── Create worktree ───────────────────────────────────────────────────────────
+SAFE_TICKET="${TICKET/\//-}"
+WORKTREE_DIR="$WORKTREE_HOME/$REPO_NAME/$SAFE_TICKET"
+
+mkdir -p "$(dirname "$WORKTREE_DIR")"
+
+if [[ -d "$WORKTREE_DIR" ]]; then
+  info "Worktree already exists at $WORKTREE_DIR"
+else
+  info "Creating worktree at $WORKTREE_DIR…"
+  git worktree add "$WORKTREE_DIR" "$BRANCH"
+  info "Done."
+fi
+
+# ── tmux: create a new window, name it, and switch to it ─────────────────────
+if [[ -n "${TMUX:-}" ]]; then
+  WINDOW_NAME="[${REPO_NAME}] ${SAFE_TICKET}: ${TITLE}"
+  WINDOW_NAME="${WINDOW_NAME:0:50}"
+
+  EXISTING=$(tmux list-windows -F '#{window_name}' 2>/dev/null \
+    | grep -Fx "$WINDOW_NAME" || true)
+
+  if [[ -n "$EXISTING" ]]; then
+    info "tmux window '$WINDOW_NAME' already exists — switching to it…"
+    tmux select-window -t "$WINDOW_NAME"
+  else
+    info "Creating tmux window '$WINDOW_NAME'…"
+    tmux new-window -c "$WORKTREE_DIR" -n "$WINDOW_NAME"
+  fi
+
+  echo "$WORKTREE_DIR"
+else
+  echo "$WORKTREE_DIR"
+fi
