@@ -213,7 +213,7 @@ if [[ "${1:-}" == "done" ]]; then
   if [[ -n "${TMUX:-}" ]]; then
     read -r TMUX_WINDOW_INDEX TMUX_WINDOW_NAME < <(
       tmux list-windows -F '#{window_index} #{window_name}' 2>/dev/null \
-        | awk -v t="$WINDOW_PREFIX" '$0 ~ t { print $1, substr($0, index($0,$2)); exit }'
+        | awk -v t="$WINDOW_PREFIX" 'index($0, t) { print $1, substr($0, index($0,$2)); exit }'
     ) || true
   fi
 
