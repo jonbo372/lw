@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # lw — Linear Worktree
 # Usage:
+#   lw                          — create a scratch worktree with a random name
+#   lw [<branch>|--current]     — create a scratch worktree, branching off <branch> or current
 #   lw <TICKET-ID>              — create worktree + tmux window for a ticket
-#   lw done <TICKET-ID>         — tear down worktree, branch, and tmux window
+#   lw <TICKET-ID> <branch>     — create worktree, branching off <branch> instead of default
+#   lw <TICKET-ID> --current    — create worktree, branching off the current branch
+#   lw done <TICKET-ID|name>    — tear down worktree, branch, and tmux window
 #   lw review <branch>          — pull a branch into a worktree for review
 #   lw done review <branch>     — tear down a review worktree
 
@@ -21,6 +25,23 @@ require() {
   for cmd in "$@"; do
     command -v "$cmd" &>/dev/null || die "'$cmd' is required but not installed."
   done
+}
+
+# Generate a random silly_name1_silly_name2 branch name
+generate_silly_name() {
+  local adjectives=(
+    blazing cosmic dancing electric fuzzy gentle happy jolly keen lazy
+    mighty noble odd peaceful quirky rapid silent turbo vivid witty
+    amber bronze crimson dusty emerald frosty golden hollow icy jade
+  )
+  local nouns=(
+    badger cobra dolphin eagle falcon gecko hawk iguana jackal koala
+    lemur moose narwhal otter parrot quail raven squid toucan urchin
+    anvil beacon comet dagger ember flute geyser harpoon iris jetpack
+  )
+  local a1="${adjectives[$((RANDOM % ${#adjectives[@]}))]}"
+  local n1="${nouns[$((RANDOM % ${#nouns[@]}))]}"
+  echo "${a1}_${n1}"
 }
 
 # Run hook scripts from ~/.lw/<phase>/ (global) and .lw/<phase>/ (repo) in sorted order.
@@ -57,7 +78,7 @@ run_hooks() {
 }
 
 # ── Route subcommands ─────────────────────────────────────────────────────────
-[[ $# -ge 1 ]] || { echo "Usage: lw <TICKET-ID> | lw done <TICKET-ID> | lw review <branch> | lw done review <branch>" >&2; exit 1; }
+# (no-arg case falls through to the create-worktree section below)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # lw review <branch> — pull a branch into a worktree for review
@@ -132,6 +153,10 @@ fi
 # lw done [review] <TICKET-ID|branch> — teardown
 # ══════════════════════════════════════════════════════════════════════════════
 if [[ "${1:-}" == "done" ]]; then
+  require git
+  GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
+  REPO_NAME="$(basename "$GIT_ROOT")"
+
   IS_REVIEW=false
   if [[ "${2:-}" == "review" ]]; then
     IS_REVIEW=true
@@ -140,16 +165,19 @@ if [[ "${1:-}" == "done" ]]; then
     SAFE_DIR="review-${BRANCH//\//-}"
     WINDOW_PREFIX="[${REPO_NAME}] review:"
   else
-    [[ $# -eq 2 ]] || die "Usage: lw done <TICKET-ID>"
+    [[ $# -eq 2 ]] || die "Usage: lw done <TICKET-ID|name>"
     BRANCH=""   # resolved from worktree below
-    TICKET="${2^^}"
-    SAFE_DIR="${TICKET/\//-}"
+    ARG="$2"
+    if [[ "$ARG" =~ ^[A-Za-z]+-[0-9]+ ]]; then
+      TICKET="${ARG^^}"
+      SAFE_DIR="${TICKET/\//-}"
+    else
+      # Scratch worktree name (e.g. fuzzy_cobra)
+      TICKET=""
+      SAFE_DIR="$ARG"
+    fi
     WINDOW_PREFIX="[${REPO_NAME}] ${SAFE_DIR}"
   fi
-  require git
-
-  GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
-  REPO_NAME="$(basename "$GIT_ROOT")"
   WORKTREE_DIR="$WORKTREE_HOME/$REPO_NAME/$SAFE_DIR"
 
   # ── Resolve branch name from the worktree (no API call needed) ────────────
@@ -236,70 +264,153 @@ if [[ "${1:-}" == "done" ]]; then
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
-# lw <TICKET-ID> — create worktree
+# lw [TICKET-ID] [<branch>|--current] — create worktree
 # ══════════════════════════════════════════════════════════════════════════════
-[[ $# -eq 1 ]] || die "Usage: lw <TICKET-ID> | lw done <TICKET-ID> | lw review <branch>"
-TICKET="${1^^}"   # normalise to upper-case
-
-# ── Pre-flight checks ─────────────────────────────────────────────────────────
-require git curl jq
-[[ -n "$LINEAR_API_KEY" ]] || die "LINEAR_API_KEY is not set. Export it or hardcode it in this script."
+[[ $# -le 2 ]] || die "Usage: lw [<TICKET-ID>] [<branch>|--current]"
 
 # Must be run from inside a git repo
+require git
 GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
 REPO_NAME="$(basename "$GIT_ROOT")"
 
-# ── Fetch branch from Linear API ──────────────────────────────────────────────
-info "Fetching branch for $TICKET from Linear…"
+# ── Determine if first arg is a ticket ID or a branch/flag ───────────────────
+# Ticket IDs look like PREFIX-123 (letters, dash, digits).
+# Everything else is treated as a branch arg for scratch mode.
+TICKET=""
+BASE_BRANCH=""
+SCRATCH=false
 
-QUERY=$(cat <<EOF
-{ "query": "{ issue(id: \"$TICKET\") { branchName title } }" }
-EOF
-)
-
-RESPONSE=$(curl -s \
-  -H "Authorization: $LINEAR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d "$QUERY" \
-  "https://api.linear.app/graphql")
-
-# Check for API-level errors
-API_ERROR=$(echo "$RESPONSE" | jq -r '.errors[0].message // empty')
-[[ -z "$API_ERROR" ]] || die "Linear API error: $API_ERROR"
-
-BRANCH=$(echo "$RESPONSE" | jq -r '.data.issue.branchName // empty')
-TITLE=$(echo  "$RESPONSE" | jq -r '.data.issue.title // empty')
-
-[[ -n "$BRANCH" ]] || die "Could not find a branch for ticket $TICKET. Check the ticket ID and your API key."
-
-info "Found: \"$TITLE\""
-info "Branch: $BRANCH"
-
-# ── Ensure the branch exists locally (fetch or create off default) ────────────
-if ! git show-ref --verify --quiet "refs/heads/$BRANCH"; then
-  if git fetch origin "$BRANCH":"$BRANCH" 2>/dev/null; then
-    info "Fetched '$BRANCH' from origin."
+if [[ $# -eq 0 ]]; then
+  SCRATCH=true
+elif [[ $# -eq 1 ]]; then
+  if [[ "$1" == "--current" ]]; then
+    SCRATCH=true
+    BASE_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null) \
+      || die "Could not determine current branch (detached HEAD?)."
+    info "Using current branch '$BASE_BRANCH' as base."
+  elif [[ "$1" =~ ^[A-Za-z]+-[0-9]+ ]]; then
+    TICKET="${1^^}"
   else
-    info "Branch not found on origin — detecting default branch…"
-    DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null \
-      | sed 's|refs/remotes/origin/||') || DEFAULT_BRANCH=""
+    # Treat as a branch name for scratch mode
+    SCRATCH=true
+    BASE_BRANCH="$1"
+    info "Using '$BASE_BRANCH' as base branch."
+  fi
+elif [[ $# -eq 2 ]]; then
+  TICKET="${1^^}"
+  if [[ "$2" == "--current" ]]; then
+    BASE_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null) \
+      || die "Could not determine current branch (detached HEAD?)."
+    info "Using current branch '$BASE_BRANCH' as base."
+  else
+    BASE_BRANCH="$2"
+    info "Using '$BASE_BRANCH' as base branch."
+  fi
+fi
 
-    if [[ -z "$DEFAULT_BRANCH" ]]; then
+if $SCRATCH; then
+  # ── Scratch mode: random name, no Linear ─────────────────────────────────
+  SILLY_NAME=$(generate_silly_name)
+  BRANCH="$SILLY_NAME"
+  TITLE="scratch"
+  SAFE_LABEL="$SILLY_NAME"
+
+  info "Creating scratch worktree '$SILLY_NAME'…"
+
+  # ── Resolve base branch ──────────────────────────────────────────────────
+  if [[ -z "$BASE_BRANCH" ]]; then
+    BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null \
+      | sed 's|refs/remotes/origin/||') || BASE_BRANCH=""
+
+    if [[ -z "$BASE_BRANCH" ]]; then
       git fetch origin 2>/dev/null || true
       for candidate in main master trunk develop; do
         if git show-ref --verify --quiet "refs/remotes/origin/$candidate"; then
-          DEFAULT_BRANCH="$candidate"
+          BASE_BRANCH="$candidate"
           break
         fi
       done
     fi
 
-    [[ -n "$DEFAULT_BRANCH" ]] \
+    [[ -n "$BASE_BRANCH" ]] \
       || die "Could not determine the default branch. Set it with: git remote set-head origin --auto"
+  fi
 
-    info "Creating '$BRANCH' off '$DEFAULT_BRANCH'…"
-    git fetch origin "$DEFAULT_BRANCH":"$DEFAULT_BRANCH" 2>/dev/null || true
-    git branch "$BRANCH" "$DEFAULT_BRANCH"
+  # Ensure the base branch exists locally
+  if ! git show-ref --verify --quiet "refs/heads/$BASE_BRANCH"; then
+    git fetch origin "$BASE_BRANCH":"$BASE_BRANCH" 2>/dev/null \
+      || die "Base branch '$BASE_BRANCH' not found locally or on origin."
+  fi
+
+  info "Creating '$BRANCH' off '$BASE_BRANCH'…"
+  git branch "$BRANCH" "$BASE_BRANCH"
+
+else
+  # ── Ticket mode: fetch from Linear ───────────────────────────────────────
+  require curl jq
+  [[ -n "$LINEAR_API_KEY" ]] || die "LINEAR_API_KEY is not set. Export it or hardcode it in this script."
+
+  info "Fetching branch for $TICKET from Linear…"
+
+  QUERY=$(cat <<EOF
+{ "query": "{ issue(id: \"$TICKET\") { branchName title } }" }
+EOF
+  )
+
+  RESPONSE=$(curl -s \
+    -H "Authorization: $LINEAR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "$QUERY" \
+    "https://api.linear.app/graphql")
+
+  API_ERROR=$(echo "$RESPONSE" | jq -r '.errors[0].message // empty')
+  [[ -z "$API_ERROR" ]] || die "Linear API error: $API_ERROR"
+
+  BRANCH=$(echo "$RESPONSE" | jq -r '.data.issue.branchName // empty')
+  TITLE=$(echo  "$RESPONSE" | jq -r '.data.issue.title // empty')
+
+  [[ -n "$BRANCH" ]] || die "Could not find a branch for ticket $TICKET. Check the ticket ID and your API key."
+
+  info "Found: \"$TITLE\""
+  info "Branch: $BRANCH"
+
+  SAFE_LABEL="${TICKET/\//-}"
+
+  # ── Ensure the branch exists locally (fetch or create off base) ──────────
+  if ! git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    if [[ -z "$BASE_BRANCH" ]] && git fetch origin "$BRANCH":"$BRANCH" 2>/dev/null; then
+      info "Fetched '$BRANCH' from origin."
+    else
+      if [[ -n "$BASE_BRANCH" ]]; then
+        if ! git show-ref --verify --quiet "refs/heads/$BASE_BRANCH"; then
+          git fetch origin "$BASE_BRANCH":"$BASE_BRANCH" 2>/dev/null \
+            || die "Base branch '$BASE_BRANCH' not found locally or on origin."
+        fi
+        info "Creating '$BRANCH' off '$BASE_BRANCH'…"
+        git branch "$BRANCH" "$BASE_BRANCH"
+      else
+        info "Branch not found on origin — detecting default branch…"
+        DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null \
+          | sed 's|refs/remotes/origin/||') || DEFAULT_BRANCH=""
+
+        if [[ -z "$DEFAULT_BRANCH" ]]; then
+          git fetch origin 2>/dev/null || true
+          for candidate in main master trunk develop; do
+            if git show-ref --verify --quiet "refs/remotes/origin/$candidate"; then
+              DEFAULT_BRANCH="$candidate"
+              break
+            fi
+          done
+        fi
+
+        [[ -n "$DEFAULT_BRANCH" ]] \
+          || die "Could not determine the default branch. Set it with: git remote set-head origin --auto"
+
+        info "Creating '$BRANCH' off '$DEFAULT_BRANCH'…"
+        git fetch origin "$DEFAULT_BRANCH":"$DEFAULT_BRANCH" 2>/dev/null || true
+        git branch "$BRANCH" "$DEFAULT_BRANCH"
+      fi
+    fi
   fi
 fi
 
@@ -307,8 +418,7 @@ git show-ref --verify --quiet "refs/heads/$BRANCH" \
   || die "Branch '$BRANCH' could not be created."
 
 # ── Create worktree ───────────────────────────────────────────────────────────
-SAFE_TICKET="${TICKET/\//-}"
-WORKTREE_DIR="$WORKTREE_HOME/$REPO_NAME/$SAFE_TICKET"
+WORKTREE_DIR="$WORKTREE_HOME/$REPO_NAME/$SAFE_LABEL"
 
 mkdir -p "$(dirname "$WORKTREE_DIR")"
 
@@ -323,7 +433,7 @@ fi
 # ── tmux: create a new window, name it, and switch to it ─────────────────────
 TMUX_WINDOW_NAME=""
 if [[ -n "${TMUX:-}" ]]; then
-  TMUX_WINDOW_NAME="[${REPO_NAME}] ${SAFE_TICKET}: ${TITLE}"
+  TMUX_WINDOW_NAME="[${REPO_NAME}] ${SAFE_LABEL}: ${TITLE}"
   TMUX_WINDOW_NAME="${TMUX_WINDOW_NAME:0:50}"
 
   EXISTING=$(tmux list-windows -F '#{window_name}' 2>/dev/null \

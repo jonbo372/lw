@@ -1,0 +1,7 @@
+
+# --- AI Code Flow (managed by install.sh) ---
+CLAUDE.md
+.claude/agents
+.claude/commands
+templates
+# --- End AI Code Flow ---
