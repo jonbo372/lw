@@ -27,6 +27,19 @@ require() {
   done
 }
 
+# Return the root of the main repository, even when called from a worktree.
+# `git rev-parse --show-toplevel` returns the worktree root, not the main repo,
+# so we use --git-common-dir (always points to the main repo's .git) instead.
+git_main_root() {
+  local common_dir
+  common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+    || return 1
+  # --git-common-dir returns e.g. /path/to/repo/.git (or .git/worktrees/… for
+  # older git, but --path-format=absolute + --git-common-dir resolves through).
+  # Strip the trailing /.git to get the repo root.
+  echo "${common_dir%/.git}"
+}
+
 # Generate a random silly_name1_silly_name2 branch name
 generate_silly_name() {
   local adjectives=(
@@ -88,7 +101,7 @@ if [[ "${1:-}" == "review" ]]; then
   BRANCH="$2"
   require git
 
-  GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
+  GIT_ROOT="$(git_main_root)" || die "Not inside a git repository."
   REPO_NAME="$(basename "$GIT_ROOT")"
 
   # ── Verify the branch exists locally or on origin — bail if neither ───────
@@ -154,7 +167,7 @@ fi
 # ══════════════════════════════════════════════════════════════════════════════
 if [[ "${1:-}" == "done" ]]; then
   require git
-  GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
+  GIT_ROOT="$(git_main_root)" || die "Not inside a git repository."
   REPO_NAME="$(basename "$GIT_ROOT")"
 
   IS_REVIEW=false
@@ -270,7 +283,7 @@ fi
 
 # Must be run from inside a git repo
 require git
-GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "Not inside a git repository."
+GIT_ROOT="$(git_main_root)" || die "Not inside a git repository."
 REPO_NAME="$(basename "$GIT_ROOT")"
 
 # ── Determine if first arg is a ticket ID or a branch/flag ───────────────────
