@@ -1,3 +1,5 @@
+# Build output
+/lw
 
 # --- AI Code Flow (managed by install.sh) ---
 CLAUDE.md

@@ -2,12 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SOURCE="$SCRIPT_DIR/scripts/lw"
 
-if [[ ! -f "$SOURCE" ]]; then
-  echo "error: scripts/lw not found" >&2
-  exit 1
-fi
+command -v go &>/dev/null || { echo "error: go is required but not installed" >&2; exit 1; }
 
 case "$(uname -s)" in
   Linux)  DEST="$HOME/.local/bin" ;;
@@ -16,7 +12,8 @@ case "$(uname -s)" in
 esac
 
 mkdir -p "$DEST"
-cp "$SOURCE" "$DEST/lw"
-chmod +x "$DEST/lw"
+
+echo "Building lw…"
+(cd "$SCRIPT_DIR" && go build -o "$DEST/lw" ./cmd/lw)
 
 echo "Installed lw to $DEST/lw"
