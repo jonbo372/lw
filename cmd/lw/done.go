@@ -4,56 +4,45 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 
-	"github.com/jonbo372/lw/internal/config"
 	"github.com/jonbo372/lw/internal/git"
 	"github.com/jonbo372/lw/internal/hook"
 	"github.com/jonbo372/lw/internal/tmux"
 )
 
-func cmdDone(args []string) {
+// cmdDone implements the `lw done <session_identifier>` subcommand.
+// It resolves the session identifier against `git worktree list`,
+// warns about uncommitted/unpushed changes, removes the worktree,
+// and kills the associated tmux window.
+// Handles all worktree types including review worktrees.
+func cmdDone(identifier string) {
 	gitRoot, err := git.MainRoot()
 	if err != nil {
 		die("Not inside a git repository.")
 	}
 	repoName := filepath.Base(gitRoot)
 
-	isReview := false
-	var branch, safeDir, windowPrefix string
-
-	if len(args) >= 1 && args[0] == "review" {
-		isReview = true
-		if len(args) != 2 {
-			die("Usage: lw done review <branch>")
-		}
-		branch = args[1]
-		safeDir = "review-" + strings.ReplaceAll(branch, "/", "-")
-		windowPrefix = fmt.Sprintf("[%s] review:", repoName)
-	} else {
-		if len(args) != 1 {
-			die("Usage: lw done <TICKET-ID|name>")
-		}
-		arg := args[0]
-		ticketRe := regexp.MustCompile(`(?i)^[A-Za-z]+-[0-9]+`)
-		if ticketRe.MatchString(arg) {
-			ticket := strings.ToUpper(arg)
-			safeDir = strings.ReplaceAll(ticket, "/", "-")
-		} else {
-			safeDir = arg
-		}
-		windowPrefix = fmt.Sprintf("[%s] %s", repoName, safeDir)
+	entries, err := git.WorktreeList()
+	if err != nil {
+		die("Failed to list worktrees: %v", err)
 	}
 
-	worktreeDir := filepath.Join(config.WorktreeHome(), repoName, safeDir)
+	matches := git.MatchWorktrees(entries, identifier)
 
-	// Resolve branch from worktree
-	if git.DirExists(worktreeDir) {
-		if b, err := git.CurrentBranchInDir(worktreeDir); err == nil {
-			branch = b
-		}
+	switch len(matches) {
+	case 0:
+		die("No worktree found matching '%s'.", identifier)
+	case 1:
+		// Exactly one match — proceed
+	default:
+		die("Multiple worktrees match '%s':\n%s\nPlease be more specific.",
+			identifier, formatWorktreeList(matches))
 	}
+
+	entry := matches[0]
+	worktreeDir := entry.Path
+	branch := entry.Branch
+	dirName := filepath.Base(worktreeDir)
 
 	// Warn about uncommitted changes
 	if git.DirExists(worktreeDir) && git.IsDirty(worktreeDir) {
@@ -66,7 +55,7 @@ func cmdDone(args []string) {
 	}
 
 	// Warn about unpushed commits
-	if !isReview && branch != "" && git.DirExists(worktreeDir) {
+	if branch != "" && git.DirExists(worktreeDir) {
 		if git.HasUnpushedCommits(worktreeDir, branch) {
 			fmt.Fprintf(os.Stderr, "warning: branch '%s' has commits not pushed to origin.\n", branch)
 			if !confirm("Continue with teardown anyway?") {
@@ -77,6 +66,7 @@ func cmdDone(args []string) {
 	}
 
 	// Resolve tmux window
+	windowPrefix := fmt.Sprintf("[%s] %s", repoName, dirName)
 	tmuxWindowIndex, tmuxWindowName := tmux.FindWindow(windowPrefix)
 
 	// Run teardown hooks
@@ -100,16 +90,11 @@ func cmdDone(args []string) {
 
 	// Delete local branch
 	if branch != "" && git.BranchExists(branch) {
-		if isReview {
-			if !git.WorktreeBranchInUse(branch) {
-				info("Deleting local branch '%s'…", branch)
-				git.DeleteBranch(branch)
-			} else {
-				info("Branch '%s' still in use by another worktree — leaving it.", branch)
-			}
-		} else {
+		if !git.WorktreeBranchInUse(branch) {
 			info("Deleting local branch '%s'…", branch)
 			git.DeleteBranch(branch)
+		} else {
+			info("Branch '%s' still in use by another worktree — leaving it.", branch)
 		}
 	}
 
@@ -125,7 +110,7 @@ func cmdDone(args []string) {
 
 	label := branch
 	if label == "" {
-		label = safeDir
+		label = dirName
 	}
 	info("Done. %s torn down.", label)
 }
