@@ -26,7 +26,10 @@ func newRootCmd() *cobra.Command {
 	// review subcommand
 	reviewCmd := newReviewCmd()
 
-	rootCmd.AddCommand(newCmd, continueCmd, doneCmd, reviewCmd)
+	// session-end subcommand (used by Claude Code SessionEnd hook)
+	sessionEndCmd := newSessionEndCmd()
+
+	rootCmd.AddCommand(newCmd, continueCmd, doneCmd, reviewCmd, sessionEndCmd)
 
 	return rootCmd
 }
@@ -116,6 +119,28 @@ func newReviewCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	return cmd
+}
+
+func newSessionEndCmd() *cobra.Command {
+	var flagRepo string
+	var flagSession string
+
+	cmd := &cobra.Command{
+		Use:    "session-end",
+		Short:  "Update session with Claude Code session ID (used by hooks)",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmdSessionEnd(flagRepo, flagSession)
+		},
+	}
+
+	cmd.Flags().StringVar(&flagRepo, "repo", "", "Repository name")
+	cmd.Flags().StringVar(&flagSession, "session", "", "Session identifier")
+	cmd.MarkFlagRequired("repo")
+	cmd.MarkFlagRequired("session")
 
 	return cmd
 }

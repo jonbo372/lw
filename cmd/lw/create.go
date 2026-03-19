@@ -6,11 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jonbo372/lw/internal/claudehook"
 	"github.com/jonbo372/lw/internal/config"
 	"github.com/jonbo372/lw/internal/git"
 	"github.com/jonbo372/lw/internal/hook"
 	"github.com/jonbo372/lw/internal/linear"
 	"github.com/jonbo372/lw/internal/namegen"
+	"github.com/jonbo372/lw/internal/session"
 )
 
 // validateName checks that a --name value is safe for use as a directory component.
@@ -156,6 +158,26 @@ func cmdNew(ticket, name, branchName string, currentTmuxWindow bool) {
 	if !currentTmuxWindow {
 		windowName := fmt.Sprintf("[%s] %s: %s", repoName, tmuxWindowLabel, title)
 		tmuxWindow = tmuxCreateOrSwitchInfo(windowName, worktreeDir)
+	}
+
+	// Persist session metadata
+	sessionsDir := config.SessionsDir()
+	sessionID := safeLabel
+	sess := &session.Session{
+		Branch:      branch,
+		Ticket:      ticket,
+		WorktreeDir: worktreeDir,
+		TmuxWindow:  tmuxWindow,
+	}
+	sessionPath, err := session.Create(sessionsDir, repoName, sessionID, sess)
+	if err != nil {
+		die("Failed to create session file: %v", err)
+	}
+	info("Session saved to %s", sessionPath)
+
+	// Install Claude Code SessionEnd hook
+	if err := claudehook.Install(worktreeDir, repoName, sessionID); err != nil {
+		die("Failed to install Claude hook: %v", err)
 	}
 
 	// hooks

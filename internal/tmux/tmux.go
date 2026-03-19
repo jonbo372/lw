@@ -66,3 +66,12 @@ func FindWindow(prefix string) (index, name string) {
 func KillWindow(index string) {
 	run("kill-window", "-t", index)
 }
+
+// SendKeys sends text to a tmux window followed by Enter.
+// Does nothing if not in a tmux session.
+func SendKeys(window, text string) {
+	if !Active() {
+		return
+	}
+	run("send-keys", "-t", window, text, "Enter")
+}
