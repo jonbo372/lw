@@ -165,6 +165,34 @@ func TestReviewCommand_TooManyArgs(t *testing.T) {
 	}
 }
 
+// --- validateName ---
+
+func TestValidateName_Valid(t *testing.T) {
+	for _, name := range []string{"my-feature", "cool_thing", "fix-123"} {
+		if err := validateName(name); err != nil {
+			t.Errorf("expected %q to be valid, got: %v", name, err)
+		}
+	}
+}
+
+func TestValidateName_RejectsSlash(t *testing.T) {
+	if err := validateName("foo/bar"); err == nil {
+		t.Fatal("expected error for name containing '/', got nil")
+	}
+}
+
+func TestValidateName_RejectsDotDot(t *testing.T) {
+	if err := validateName("foo..bar"); err == nil {
+		t.Fatal("expected error for name containing '..', got nil")
+	}
+}
+
+func TestValidateName_RejectsPathTraversal(t *testing.T) {
+	if err := validateName("../etc"); err == nil {
+		t.Fatal("expected error for path traversal name, got nil")
+	}
+}
+
 // --- done review is no longer a subcommand ---
 
 func TestDoneReview_IsNoLongerSubcommand(t *testing.T) {

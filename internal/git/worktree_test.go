@@ -156,6 +156,36 @@ func TestMatchWorktrees_ReviewWorktree(t *testing.T) {
 	}
 }
 
+func TestMatchWorktrees_CaseInsensitiveDirName(t *testing.T) {
+	entries := []WorktreeEntry{
+		{Path: "/home/user/.superclaude/repo/VOI-42", Branch: "jonbo372/VOI-42/add-auth"},
+	}
+	matches := MatchWorktrees(entries, "voi-42")
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match for case-insensitive dir name, got %d", len(matches))
+	}
+}
+
+func TestMatchWorktrees_CaseInsensitiveBranch(t *testing.T) {
+	entries := []WorktreeEntry{
+		{Path: "/home/user/.superclaude/repo/work", Branch: "Feature/Cool-Thing"},
+	}
+	matches := MatchWorktrees(entries, "feature/cool-thing")
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match for case-insensitive branch, got %d", len(matches))
+	}
+}
+
+func TestMatchWorktrees_CaseInsensitiveSubstring(t *testing.T) {
+	entries := []WorktreeEntry{
+		{Path: "/home/user/.superclaude/repo/VOI-42", Branch: "jonbo372/VOI-42/add-auth"},
+	}
+	matches := MatchWorktrees(entries, "voi-4")
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match for case-insensitive substring, got %d", len(matches))
+	}
+}
+
 func TestMatchWorktrees_SkipsBareEntries(t *testing.T) {
 	entries := []WorktreeEntry{
 		{Path: "/home/user/repo", Branch: "", Bare: true},

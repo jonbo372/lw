@@ -40,7 +40,9 @@ func cmdReview(args []string) {
 	safeDir := "review-" + strings.ReplaceAll(branch, "/", "-")
 	worktreeDir := filepath.Join(config.WorktreeHome(), repoName, safeDir)
 
-	os.MkdirAll(filepath.Dir(worktreeDir), 0755)
+	if err := os.MkdirAll(filepath.Dir(worktreeDir), 0755); err != nil {
+		die("Failed to create worktree parent directory: %v", err)
+	}
 
 	if git.DirExists(worktreeDir) {
 		info("Worktree already exists at %s", worktreeDir)
@@ -68,12 +70,14 @@ func cmdReview(args []string) {
 	fmt.Println(worktreeDir)
 }
 
+const maxTmuxWindowNameLen = 50
+
 func tmuxCreateOrSwitchInfo(name, dir string) string {
 	if !tmux.Active() {
 		return ""
 	}
-	if len(name) > 50 {
-		name = name[:50]
+	if len(name) > maxTmuxWindowNameLen {
+		name = name[:maxTmuxWindowNameLen]
 	}
 	windowName := tmux.CreateOrSwitch(name, dir)
 	if windowName != "" {

@@ -65,6 +65,8 @@ func MatchWorktrees(entries []WorktreeEntry, identifier string) []WorktreeEntry 
 	var exactMatches []WorktreeEntry
 	var substringMatches []WorktreeEntry
 
+	idLower := strings.ToLower(identifier)
+
 	for _, e := range entries {
 		if e.Bare {
 			continue
@@ -72,14 +74,17 @@ func MatchWorktrees(entries []WorktreeEntry, identifier string) []WorktreeEntry 
 
 		dirName := filepath.Base(e.Path)
 
-		// Exact matches: full path, dir name, or branch name
-		if e.Path == identifier || dirName == identifier || e.Branch == identifier {
+		// Exact matches (case-insensitive): full path, dir name, or branch name
+		if e.Path == identifier ||
+			strings.EqualFold(dirName, identifier) ||
+			strings.EqualFold(e.Branch, identifier) {
 			exactMatches = append(exactMatches, e)
 			continue
 		}
 
-		// Substring matches: identifier appears in path or branch
-		if strings.Contains(e.Path, identifier) || strings.Contains(e.Branch, identifier) {
+		// Substring matches (case-insensitive): identifier appears in path or branch
+		if strings.Contains(strings.ToLower(e.Path), idLower) ||
+			strings.Contains(strings.ToLower(e.Branch), idLower) {
 			substringMatches = append(substringMatches, e)
 		}
 	}

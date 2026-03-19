@@ -13,6 +13,14 @@ import (
 	"github.com/jonbo372/lw/internal/namegen"
 )
 
+// validateName checks that a --name value is safe for use as a directory component.
+func validateName(name string) error {
+	if strings.Contains(name, "/") || strings.Contains(name, "..") {
+		return fmt.Errorf("--name must not contain '/' or '..'")
+	}
+	return nil
+}
+
 // cmdNew implements the `lw new` subcommand.
 //
 // Naming precedence (highest to lowest):
@@ -33,6 +41,9 @@ func cmdNew(ticket, name, branchName string, currentTmuxWindow bool) {
 	switch {
 	case name != "":
 		// --name takes precedence over everything
+		if err := validateName(name); err != nil {
+			die("%v", err)
+		}
 		branch = name
 		safeLabel = name
 		tmuxWindowLabel = name
@@ -126,7 +137,9 @@ func cmdNew(ticket, name, branchName string, currentTmuxWindow bool) {
 
 	// Create worktree
 	worktreeDir := filepath.Join(config.WorktreeHome(), repoName, safeLabel)
-	os.MkdirAll(filepath.Dir(worktreeDir), 0755)
+	if err := os.MkdirAll(filepath.Dir(worktreeDir), 0755); err != nil {
+		die("Failed to create worktree parent directory: %v", err)
+	}
 
 	if git.DirExists(worktreeDir) {
 		info("Worktree already exists at %s", worktreeDir)
