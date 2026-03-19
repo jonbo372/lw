@@ -193,6 +193,38 @@ func TestValidateName_RejectsPathTraversal(t *testing.T) {
 	}
 }
 
+// --- Session-end subcommand ---
+
+func TestSessionEndCommand_RequiresFlags(t *testing.T) {
+	if err := executeCommand("session-end"); err == nil {
+		t.Fatal("expected error for session-end without flags, got nil")
+	}
+}
+
+func TestSessionEndCommand_RequiresSessionFlag(t *testing.T) {
+	if err := executeCommand("session-end", "--repo", "myrepo"); err == nil {
+		t.Fatal("expected error for session-end without --session, got nil")
+	}
+}
+
+func TestSessionEndCommand_RequiresRepoFlag(t *testing.T) {
+	if err := executeCommand("session-end", "--session", "VOI-42"); err == nil {
+		t.Fatal("expected error for session-end without --repo, got nil")
+	}
+}
+
+func TestSessionEndCommand_BothFlags(t *testing.T) {
+	if err := executeCommand("session-end", "--repo", "myrepo", "--session", "VOI-42"); err != nil {
+		t.Fatalf("expected no error for session-end with both flags, got: %v", err)
+	}
+}
+
+func TestSessionEndCommand_NoPositionalArgs(t *testing.T) {
+	if err := executeCommand("session-end", "--repo", "myrepo", "--session", "VOI-42", "extra"); err == nil {
+		t.Fatal("expected error for session-end with positional arg, got nil")
+	}
+}
+
 // --- done review is no longer a subcommand ---
 
 func TestDoneReview_IsNoLongerSubcommand(t *testing.T) {

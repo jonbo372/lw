@@ -3,9 +3,13 @@ package main
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
+	"github.com/jonbo372/lw/internal/config"
 	"github.com/jonbo372/lw/internal/git"
 	"github.com/jonbo372/lw/internal/hook"
+	"github.com/jonbo372/lw/internal/session"
+	"github.com/jonbo372/lw/internal/tmux"
 )
 
 // cmdContinue implements the `lw continue <session_identifier>` subcommand.
@@ -46,6 +50,17 @@ func cmdContinue(identifier string, currentTmuxWindow bool) {
 	if !currentTmuxWindow {
 		windowName := fmt.Sprintf("[%s] %s", repoName, dirName)
 		tmuxWindow = tmuxCreateOrSwitchInfo(windowName, worktreeDir)
+	}
+
+	// Print saved Claude session ID to tmux window if available
+	if tmuxWindow != "" {
+		sess, err := session.Load(config.SessionsDir(), repoName, dirName)
+		if err == nil && sess != nil && sess.ClaudeSessionID != "" {
+			// Strip newlines to prevent command injection via tmux send-keys
+			safeID := strings.ReplaceAll(strings.ReplaceAll(sess.ClaudeSessionID, "\n", ""), "\r", "")
+			info("Found Claude session: %s", safeID)
+			tmux.SendKeys(tmuxWindow, fmt.Sprintf("# Previous Claude session: %s", safeID))
+		}
 	}
 
 	// hooks
