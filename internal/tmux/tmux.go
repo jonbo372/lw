@@ -20,14 +20,17 @@ func Active() bool {
 	return os.Getenv("TMUX") != ""
 }
 
+// MaxWindowNameLen is the maximum length for a tmux window name.
+const MaxWindowNameLen = 50
+
 // CreateOrSwitch opens a new tmux window or switches to an existing one.
 // Returns the window name used, or "" if not in tmux.
 func CreateOrSwitch(name, dir string) string {
 	if !Active() {
 		return ""
 	}
-	if len(name) > 50 {
-		name = name[:50]
+	if len(name) > MaxWindowNameLen {
+		name = name[:MaxWindowNameLen]
 	}
 
 	out, _ := run("list-windows", "-F", "#{window_name}")

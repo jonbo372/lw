@@ -70,14 +70,12 @@ func cmdReview(args []string) {
 	fmt.Println(worktreeDir)
 }
 
-const maxTmuxWindowNameLen = 50
-
 func tmuxCreateOrSwitchInfo(name, dir string) string {
 	if !tmux.Active() {
 		return ""
 	}
-	if len(name) > maxTmuxWindowNameLen {
-		name = name[:maxTmuxWindowNameLen]
+	if len(name) > tmux.MaxWindowNameLen {
+		name = name[:tmux.MaxWindowNameLen]
 	}
 	windowName := tmux.CreateOrSwitch(name, dir)
 	if windowName != "" {
