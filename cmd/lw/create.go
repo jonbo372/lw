@@ -15,6 +15,16 @@ import (
 	"github.com/jonbo372/lw/internal/session"
 )
 
+// fetchTicket resolves the correct API key and fetches the ticket from Linear.
+func fetchTicket(ticketID string) *linear.Ticket {
+	resolver := linear.NewResolver(linear.DefaultConfigPath(), linear.FetchTicket)
+	_, t, err := resolver.ResolveAndFetch(ticketID)
+	if err != nil {
+		die("%v", err)
+	}
+	return t
+}
+
 // validateName checks that a --name value is safe for use as a directory component.
 func validateName(name string) error {
 	if strings.Contains(name, "/") || strings.Contains(name, "..") {
@@ -38,6 +48,8 @@ func cmdNew(ticket, name, branchName string, currentTmuxWindow bool) {
 	}
 	repoName := filepath.Base(gitRoot)
 
+	ticket = strings.ToUpper(ticket)
+
 	var branch, title, safeLabel, tmuxWindowLabel string
 
 	switch {
@@ -52,14 +64,7 @@ func cmdNew(ticket, name, branchName string, currentTmuxWindow bool) {
 		title = name
 
 		if ticket != "" {
-			apiKey := config.LinearAPIKey()
-			if apiKey == "" {
-				die("LINEAR_API_KEY is not set.")
-			}
-			t, err := linear.FetchTicket(apiKey, strings.ToUpper(ticket))
-			if err != nil {
-				die("%v", err)
-			}
+			t := fetchTicket(ticket)
 			title = t.Title
 		}
 
@@ -68,16 +73,9 @@ func cmdNew(ticket, name, branchName string, currentTmuxWindow bool) {
 		branch = branchName
 
 		if ticket != "" {
-			apiKey := config.LinearAPIKey()
-			if apiKey == "" {
-				die("LINEAR_API_KEY is not set.")
-			}
-			t, err := linear.FetchTicket(apiKey, strings.ToUpper(ticket))
-			if err != nil {
-				die("%v", err)
-			}
+			t := fetchTicket(ticket)
 			title = t.Title
-			safeLabel = strings.ReplaceAll(strings.ToUpper(ticket), "/", "-")
+			safeLabel = strings.ReplaceAll(ticket, "/", "-")
 			tmuxWindowLabel = safeLabel
 		} else {
 			safeLabel = strings.ReplaceAll(branchName, "/", "-")
@@ -87,17 +85,8 @@ func cmdNew(ticket, name, branchName string, currentTmuxWindow bool) {
 
 	case ticket != "":
 		// --ticket only: use Linear gitBranchName
-		apiKey := config.LinearAPIKey()
-		if apiKey == "" {
-			die("LINEAR_API_KEY is not set. Export it or set it in your environment.")
-		}
-
-		ticket = strings.ToUpper(ticket)
 		info("Fetching branch for %s from Linear…", ticket)
-		t, err := linear.FetchTicket(apiKey, ticket)
-		if err != nil {
-			die("%v", err)
-		}
+		t := fetchTicket(ticket)
 		if t.Branch == "" {
 			die("No gitBranchName found for ticket %s.", ticket)
 		}
