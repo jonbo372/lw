@@ -431,6 +431,102 @@ func TestListAll_MalformedSessionFile(t *testing.T) {
 	}
 }
 
+// --- Delete ---
+
+func TestDelete_ExistingSession(t *testing.T) {
+	dir := t.TempDir()
+
+	s := &Session{
+		Branch:      "test-branch",
+		Ticket:      "VOI-42",
+		WorktreeDir: "/tmp/wt",
+		TmuxWindow:  "win",
+	}
+
+	path, err := Create(dir, "myrepo", "VOI-42", s)
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	// Verify file exists
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("session file should exist before delete: %v", err)
+	}
+
+	// Delete the session
+	err = Delete(dir, "myrepo", "VOI-42")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify file is gone
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("expected session file to be deleted")
+	}
+}
+
+func TestDelete_NonExistentFile(t *testing.T) {
+	dir := t.TempDir()
+
+	// Deleting a non-existent session should return nil (no error)
+	err := Delete(dir, "myrepo", "nonexistent")
+	if err != nil {
+		t.Fatalf("expected no error for non-existent file, got: %v", err)
+	}
+}
+
+func TestDelete_PermissionDenied(t *testing.T) {
+	dir := t.TempDir()
+
+	s := &Session{Branch: "b", WorktreeDir: "/tmp/wt"}
+	_, err := Create(dir, "myrepo", "test", s)
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	// Make the directory read-only so the file cannot be removed
+	repoDir := filepath.Join(dir, "myrepo")
+	os.Chmod(repoDir, 0555)
+	defer os.Chmod(repoDir, 0755)
+
+	err = Delete(dir, "myrepo", "test")
+	if err == nil {
+		t.Fatal("expected error when directory is read-only")
+	}
+}
+
+func TestDelete_ThenListAllShowsEmpty(t *testing.T) {
+	dir := t.TempDir()
+
+	s := &Session{Branch: "b", Ticket: "VOI-1", WorktreeDir: "/tmp/wt"}
+	if _, err := Create(dir, "myrepo", "VOI-1", s); err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	// Verify it shows up in ListAll
+	sessions, err := ListAll(dir, "myrepo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+
+	// Delete it
+	if err := Delete(dir, "myrepo", "VOI-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify it no longer shows up in ListAll
+	sessions, err = ListAll(dir, "myrepo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions after delete, got %d", len(sessions))
+	}
+}
+
 func TestDefaultSessionsDir(t *testing.T) {
 	dir := DefaultSessionsDir()
 	if dir == "" {
