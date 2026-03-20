@@ -5,8 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jonbo372/lw/internal/config"
 	"github.com/jonbo372/lw/internal/git"
 	"github.com/jonbo372/lw/internal/hook"
+	"github.com/jonbo372/lw/internal/session"
 	"github.com/jonbo372/lw/internal/tmux"
 )
 
@@ -78,6 +80,15 @@ func cmdDone(identifier string) {
 		TmuxWindow:  tmuxWindowName,
 	}); err != nil {
 		die("%v", err)
+	}
+
+	// Clean up session file
+	sessionID := dirName
+	sessionsDir := config.SessionsDir()
+	if err := session.Delete(sessionsDir, repoName, sessionID); err != nil {
+		info("Warning: failed to remove session file: %v", err)
+	} else {
+		info("Removed session file for '%s'.", sessionID)
 	}
 
 	// Remove worktree

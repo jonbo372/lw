@@ -97,6 +97,15 @@ func UpdateClaudeSessionID(sessionsDir, repoName, sessionID, claudeSessionID str
 	return nil
 }
 
+// Delete removes the session JSON file. Returns nil if the file does not exist.
+func Delete(sessionsDir, repoName, sessionID string) error {
+	path := Path(sessionsDir, repoName, sessionID)
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("removing session file: %w", err)
+	}
+	return nil
+}
+
 // DefaultSessionsDir returns the default sessions directory from config.
 func DefaultSessionsDir() string {
 	return config.SessionsDir()
