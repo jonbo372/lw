@@ -26,10 +26,13 @@ func newRootCmd() *cobra.Command {
 	// review subcommand
 	reviewCmd := newReviewCmd()
 
+	// list subcommand
+	listCmd := newListCmd()
+
 	// session-end subcommand (used by Claude Code SessionEnd hook)
 	sessionEndCmd := newSessionEndCmd()
 
-	rootCmd.AddCommand(newCmd, continueCmd, doneCmd, reviewCmd, sessionEndCmd)
+	rootCmd.AddCommand(newCmd, continueCmd, doneCmd, reviewCmd, listCmd, sessionEndCmd)
 
 	return rootCmd
 }
@@ -117,6 +120,27 @@ func newReviewCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmdReview(args)
 			return nil
+		},
+	}
+
+	return cmd
+}
+
+func newListCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List all sessions and worktrees",
+		Long: `List all sessions and worktrees, cross-referencing session JSON files
+with the output of 'git worktree list'.
+
+Status labels:
+  active    - Session and worktree both exist
+  orphaned  - Worktree exists but no session JSON
+  dead      - Session JSON exists but worktree is gone`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmdList()
 		},
 	}
 

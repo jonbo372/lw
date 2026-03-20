@@ -313,3 +313,127 @@ func TestUpdateClaudeSessionID_LoadError(t *testing.T) {
 		t.Fatal("expected error for unreadable session file")
 	}
 }
+
+// --- ListAll ---
+
+func TestListAll_EmptyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	// No repo subdirectory exists — should return empty map, no error
+	sessions, err := ListAll(dir, "myrepo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions, got %d", len(sessions))
+	}
+}
+
+func TestListAll_MultipleSessions(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create two sessions
+	s1 := &Session{Branch: "branch-1", Ticket: "VOI-1", WorktreeDir: "/tmp/wt1"}
+	s2 := &Session{Branch: "branch-2", Ticket: "VOI-2", WorktreeDir: "/tmp/wt2"}
+
+	if _, err := Create(dir, "myrepo", "VOI-1", s1); err != nil {
+		t.Fatalf("failed to create session 1: %v", err)
+	}
+	if _, err := Create(dir, "myrepo", "VOI-2", s2); err != nil {
+		t.Fatalf("failed to create session 2: %v", err)
+	}
+
+	// Set Claude session ID on VOI-2
+	if err := UpdateClaudeSessionID(dir, "myrepo", "VOI-2", "abc"); err != nil {
+		t.Fatalf("failed to update claude session ID: %v", err)
+	}
+
+	sessions, err := ListAll(dir, "myrepo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(sessions))
+	}
+	if sessions["VOI-1"] == nil {
+		t.Error("expected VOI-1 session")
+	}
+	if sessions["VOI-2"] == nil {
+		t.Error("expected VOI-2 session")
+	}
+	if sessions["VOI-2"].ClaudeSessionID != "abc" {
+		t.Errorf("expected ClaudeSessionID 'abc', got %q", sessions["VOI-2"].ClaudeSessionID)
+	}
+}
+
+func TestListAll_IgnoresNonJSONFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	s := &Session{Branch: "b", WorktreeDir: "/tmp/wt"}
+	if _, err := Create(dir, "myrepo", "test", s); err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	// Create a non-JSON file
+	repoDir := filepath.Join(dir, "myrepo")
+	os.WriteFile(filepath.Join(repoDir, "notes.txt"), []byte("hello"), 0644)
+
+	sessions, err := ListAll(dir, "myrepo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Errorf("expected 1 session, got %d", len(sessions))
+	}
+}
+
+func TestListAll_IgnoresSubdirectories(t *testing.T) {
+	dir := t.TempDir()
+
+	s := &Session{Branch: "b", WorktreeDir: "/tmp/wt"}
+	if _, err := Create(dir, "myrepo", "test", s); err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	// Create a subdirectory
+	os.MkdirAll(filepath.Join(dir, "myrepo", "subdir"), 0755)
+
+	sessions, err := ListAll(dir, "myrepo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Errorf("expected 1 session, got %d", len(sessions))
+	}
+}
+
+func TestListAll_UnreadableDirectory(t *testing.T) {
+	dir := t.TempDir()
+	repoDir := filepath.Join(dir, "myrepo")
+	os.MkdirAll(repoDir, 0755)
+	os.Chmod(repoDir, 0000)
+	defer os.Chmod(repoDir, 0755)
+
+	_, err := ListAll(dir, "myrepo")
+	if err == nil {
+		t.Fatal("expected error for unreadable directory")
+	}
+}
+
+func TestListAll_MalformedSessionFile(t *testing.T) {
+	dir := t.TempDir()
+	repoDir := filepath.Join(dir, "myrepo")
+	os.MkdirAll(repoDir, 0755)
+	os.WriteFile(filepath.Join(repoDir, "bad.json"), []byte("{invalid"), 0644)
+
+	_, err := ListAll(dir, "myrepo")
+	if err == nil {
+		t.Fatal("expected error for malformed session file")
+	}
+}
+
+func TestDefaultSessionsDir(t *testing.T) {
+	dir := DefaultSessionsDir()
+	if dir == "" {
+		t.Fatal("expected non-empty sessions dir")
+	}
+}

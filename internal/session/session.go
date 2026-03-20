@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/jonbo372/lw/internal/config"
 )
 
 // Session represents the persisted metadata for an lw worktree session.
@@ -92,4 +95,45 @@ func UpdateClaudeSessionID(sessionsDir, repoName, sessionID, claudeSessionID str
 	}
 
 	return nil
+}
+
+// DefaultSessionsDir returns the default sessions directory from config.
+func DefaultSessionsDir() string {
+	return config.SessionsDir()
+}
+
+// ListAll reads all session JSON files in sessionsDir/repoName/ and returns
+// them as a map keyed by session ID (the filename without .json extension).
+func ListAll(sessionsDir, repoName string) (map[string]*Session, error) {
+	dir := filepath.Join(sessionsDir, repoName)
+
+	dirEntries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return map[string]*Session{}, nil
+		}
+		return nil, fmt.Errorf("reading sessions directory: %w", err)
+	}
+
+	result := make(map[string]*Session)
+	for _, entry := range dirEntries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+
+		sessionID := strings.TrimSuffix(name, ".json")
+		sess, err := Load(sessionsDir, repoName, sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("loading session %s: %w", sessionID, err)
+		}
+		if sess != nil {
+			result[sessionID] = sess
+		}
+	}
+
+	return result, nil
 }
