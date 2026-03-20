@@ -16,10 +16,14 @@ type linearConfig struct {
 	APIKeys map[string]string `json:"API_KEYS"`
 }
 
+// VerboseFunc is a callback for emitting verbose progress messages.
+type VerboseFunc func(msg string, args ...any)
+
 // Resolver resolves which LINEAR_API_KEY* env var to use for a given ticket.
 type Resolver struct {
 	configPath string
 	fetcher    func(apiKey, ticketID string) (*Ticket, error)
+	verboseFn  VerboseFunc
 }
 
 // NewResolver creates a Resolver with the given config path and fetcher function.
@@ -27,6 +31,20 @@ func NewResolver(configPath string, fetcher func(apiKey, ticketID string) (*Tick
 	return &Resolver{
 		configPath: configPath,
 		fetcher:    fetcher,
+	}
+}
+
+// SetVerbose sets a callback for verbose progress output.
+// Returns the Resolver for method chaining.
+func (r *Resolver) SetVerbose(fn VerboseFunc) *Resolver {
+	r.verboseFn = fn
+	return r
+}
+
+// logVerbose emits a verbose message if a callback is set.
+func (r *Resolver) logVerbose(msg string, args ...any) {
+	if r.verboseFn != nil {
+		r.verboseFn(msg, args...)
 	}
 }
 
@@ -39,26 +57,33 @@ func DefaultConfigPath() string {
 // Returns the env var name (not the secret), the ticket, and any error.
 func (r *Resolver) ResolveAndFetch(ticketID string) (string, *Ticket, error) {
 	prefix := extractPrefix(ticketID)
+	r.logVerbose("Resolving API key for prefix %s (ticket %s)", prefix, ticketID)
 
 	// Try cached mapping first
 	cfg := r.loadConfig()
 	if envVarName, ok := cfg.APIKeys[prefix]; ok {
+		r.logVerbose("Found cached mapping: %s -> %s", prefix, envVarName)
 		apiKeyValue := os.Getenv(envVarName)
 		if apiKeyValue != "" {
 			ticket, err := r.fetcher(apiKeyValue, ticketID)
 			if err == nil {
+				r.logVerbose("Cached key %s succeeded", envVarName)
 				return envVarName, ticket, nil
 			}
+			r.logVerbose("Cached key %s failed, falling through to discovery", envVarName)
 			// Stale mapping, fall through to discovery
 		}
 	}
 
 	// Discovery: try each LINEAR_API_KEY* env var
 	keyNames := config.LinearAPIKeys()
+	r.logVerbose("Trying %d API key(s) for prefix %s...", len(keyNames), prefix)
 	for _, envVarName := range keyNames {
+		r.logVerbose("Trying %s...", envVarName)
 		apiKeyValue := os.Getenv(envVarName)
 		ticket, err := r.fetcher(apiKeyValue, ticketID)
 		if err == nil {
+			r.logVerbose("Key %s succeeded, saving mapping", envVarName)
 			// Save the mapping
 			cfg.APIKeys[prefix] = envVarName
 			if err := r.saveConfig(cfg); err != nil {

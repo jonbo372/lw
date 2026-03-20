@@ -225,6 +225,69 @@ func TestSessionEndCommand_NoPositionalArgs(t *testing.T) {
 	}
 }
 
+// --- Verbose flag ---
+
+func TestVerboseFlag_Default(t *testing.T) {
+	cmd := newRootCmd()
+	stubRuns(cmd)
+	cmd.SetArgs([]string{"new"})
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.ExecuteC()
+
+	v, err := cmd.PersistentFlags().GetBool("verbose")
+	if err != nil {
+		t.Fatalf("expected --verbose flag to exist, got: %v", err)
+	}
+	if v {
+		t.Error("expected --verbose to default to false")
+	}
+}
+
+func TestVerboseFlag_Set(t *testing.T) {
+	cmd := newRootCmd()
+	stubRuns(cmd)
+	cmd.SetArgs([]string{"--verbose", "new"})
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.ExecuteC()
+
+	v, _ := cmd.PersistentFlags().GetBool("verbose")
+	if !v {
+		t.Error("expected --verbose to be true when set")
+	}
+}
+
+func TestVerboseFlag_ShortFlag(t *testing.T) {
+	cmd := newRootCmd()
+	stubRuns(cmd)
+	cmd.SetArgs([]string{"-v", "new"})
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
+	cmd.ExecuteC()
+
+	v, _ := cmd.PersistentFlags().GetBool("verbose")
+	if !v {
+		t.Error("expected -v to set verbose to true")
+	}
+}
+
+func TestVerboseFlag_AvailableOnSubcommands(t *testing.T) {
+	subcommands := [][]string{
+		{"--verbose", "new"},
+		{"--verbose", "continue", "foo"},
+		{"--verbose", "done", "foo"},
+		{"--verbose", "review", "foo"},
+		{"--verbose", "list"},
+		{"--verbose", "session-end", "--repo", "r", "--session", "s"},
+	}
+	for _, args := range subcommands {
+		if err := executeCommand(args...); err != nil {
+			t.Errorf("expected no error for %v, got: %v", args, err)
+		}
+	}
+}
+
 // --- done review is no longer a subcommand ---
 
 func TestDoneReview_IsNoLongerSubcommand(t *testing.T) {

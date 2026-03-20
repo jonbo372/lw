@@ -18,6 +18,9 @@ import (
 // fetchTicket resolves the correct API key and fetches the ticket from Linear.
 func fetchTicket(ticketID string) *linear.Ticket {
 	resolver := linear.NewResolver(linear.DefaultConfigPath(), linear.FetchTicket)
+	if isVerbose() {
+		resolver.SetVerbose(verbose)
+	}
 	_, t, err := resolver.ResolveAndFetch(ticketID)
 	if err != nil {
 		die("%v", err)
