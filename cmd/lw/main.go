@@ -12,7 +12,13 @@ func newRootCmd() *cobra.Command {
 		Short: "Manage git worktrees for Linear tickets",
 		// No RunE — root command displays help when invoked without subcommands.
 		SilenceUsage: true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			v, _ := cmd.Flags().GetBool("verbose")
+			setVerbose(v)
+		},
 	}
+
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Enable detailed progress output")
 
 	// new subcommand
 	newCmd := newNewCmd()
