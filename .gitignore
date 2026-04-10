@@ -7,3 +7,11 @@ CLAUDE.md
 .claude/commands
 templates
 # --- End AI Code Flow ---
+
+# Gas Town (added by gt)
+.runtime/
+.claude/
+.logs/
+__pycache__/
+state.json
+CLAUDE.local.md
