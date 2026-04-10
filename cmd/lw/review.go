@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jonbo372/lw/internal/claudehook"
 	"github.com/jonbo372/lw/internal/config"
 	"github.com/jonbo372/lw/internal/git"
 	"github.com/jonbo372/lw/internal/hook"
+	"github.com/jonbo372/lw/internal/session"
 	"github.com/jonbo372/lw/internal/tmux"
 )
 
@@ -56,6 +58,26 @@ func cmdReview(args []string) {
 
 	sessionName := fmt.Sprintf("[%s] review: %s", repoName, branch)
 	tmuxSession := tmuxCreateOrSwitchInfo(sessionName, worktreeDir)
+
+	// Persist session metadata
+	sessionsDir := config.SessionsDir()
+	sessionID := safeDir
+	sess := &session.Session{
+		Branch:      branch,
+		Ticket:      "",
+		WorktreeDir: worktreeDir,
+		TmuxSession: tmuxSession,
+	}
+	sessionPath, err := session.Create(sessionsDir, repoName, sessionID, sess)
+	if err != nil {
+		die("Failed to create session file: %v", err)
+	}
+	info("Session saved to %s", sessionPath)
+
+	// Install Claude Code SessionEnd hook
+	if err := claudehook.Install(worktreeDir, repoName, sessionID); err != nil {
+		die("Failed to install Claude hook: %v", err)
+	}
 
 	if err := hook.Run("setup", gitRoot, hook.Env{
 		WorktreeDir: worktreeDir,
