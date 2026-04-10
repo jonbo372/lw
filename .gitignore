@@ -1,6 +1,12 @@
 # Build output
 /bin/
 
+# --- AI Code Flow (managed by install.sh) ---
+CLAUDE.md
+.claude/agents
+.claude/commands
+templates
+# --- End AI Code Flow ---
 
 # Gas Town (added by gt)
 .runtime/
@@ -9,8 +15,3 @@
 __pycache__/
 state.json
 CLAUDE.local.md
-
-# --- AI Code Flow (managed by install.sh) ---
-.claude/agents
-templates
-# --- End AI Code Flow ---
