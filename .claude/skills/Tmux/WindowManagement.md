@@ -1,50 +1,52 @@
-# tmux Window Management
+# tmux Session Management
 
 ## Overview
 
-The `lw` script optionally creates and manages tmux windows — one per worktree. All tmux operations are gated behind `[[ -n "${TMUX:-}" ]]`, so the script degrades gracefully when not running inside tmux.
+The `lw` tool creates and manages tmux sessions — one per worktree. All tmux operations are gated behind `[[ -n "${TMUX:-}" ]]`, so the tool degrades gracefully when not running inside tmux.
 
-## Window naming
+## Session naming
 
 | Mode | Pattern | Example |
 |------|---------|---------|
-| Ticket | `[<repo>] <TICKET>: <title>` | `[myrepo] ENG-123: Add user auth` |
-| Scratch | `[<repo>] <silly_name>: scratch` | `[myrepo] fuzzy_cobra: scratch` |
-| Review | `[<repo>] review: <branch>` | `[myrepo] review: feature/auth` |
+| Ticket | `[<repo>] <TICKET>- <title>` | `[myrepo] ENG-123- Add user auth` |
+| Scratch | `[<repo>] <silly_name>- scratch` | `[myrepo] fuzzy_cobra- scratch` |
+| Review | `[<repo>] review- <branch>` | `[myrepo] review- feature/auth` |
 
-Names are truncated to 50 characters (`${TMUX_WINDOW_NAME:0:50}`).
+Names are truncated to 50 characters and sanitized (colons and periods replaced with hyphens, since they are special in tmux target syntax).
 
-## Window creation (setup)
+## Session creation (setup)
 
-1. Check if a window with the exact name already exists: `tmux list-windows -F '#{window_name}' | grep -Fx`
-2. If it exists, switch to it: `tmux select-window -t "$TMUX_WINDOW_NAME"`
-3. If not, create it: `tmux new-window -c "$WORKTREE_DIR" -n "$TMUX_WINDOW_NAME"`
+1. Sanitize the name (replace `:` and `.` with `-`)
+2. Check if a session with the exact name already exists: `tmux has-session -t "=<name>"`
+3. If it exists, switch to it: `tmux switch-client -t "<name>"`
+4. If not, create it: `tmux new-session -d -s "<name>" -c "<worktreeDir>"` then `tmux switch-client -t "<name>"`
 
-The `-c` flag sets the initial working directory to the worktree path.
+The `-c` flag sets the initial working directory to the worktree path. The `-d` flag creates the session detached, then `switch-client` moves the current client to it.
 
-## Window teardown
+## Session teardown
 
-1. Find the window by prefix match: `tmux list-windows -F '#{window_index} #{window_name}'` piped through `awk` matching against `$WINDOW_PREFIX`
-2. If found, kill it: `tmux kill-window -t "$TMUX_WINDOW_INDEX"`
+1. Find the session by prefix match: `tmux list-sessions -F '#{session_name}'` filtered by `strings.Contains`
+2. If found, kill it: `tmux kill-session -t "=<name>"` (exact match via `=` prefix)
 3. If not found, log and continue (non-fatal)
 
-The teardown uses `WINDOW_PREFIX` (e.g. `[myrepo] ENG-123`) for matching rather than exact name, since the title portion may vary.
+The teardown uses a prefix (e.g. `[myrepo] ENG-123`) for matching rather than exact name, since the title portion may vary.
 
-## Window reference in hooks
+## Session reference in hooks
 
-The window name is exported as `LW_TMUX_WINDOW` for hook scripts. Hooks can use this to:
-- Send keystrokes: `tmux send-keys -t "$LW_TMUX_WINDOW" "command" Enter`
-- Capture output: `tmux capture-pane -t "$LW_TMUX_WINDOW" -p`
+The session name is exported as `LW_TMUX_SESSION` for hook scripts. Hooks can use this to:
+- Send keystrokes: `tmux send-keys -t "$LW_TMUX_SESSION" "command" Enter`
+- Capture output: `tmux capture-pane -t "$LW_TMUX_SESSION" -p`
 
-Setup hooks run **after** window creation. Teardown hooks run **before** window close.
+Setup hooks run **after** session creation. Teardown hooks run **before** session close.
 
 ## Key tmux commands used
 
 | Command | Purpose |
 |---------|---------|
-| `tmux list-windows -F '#{window_name}'` | List all window names in current session |
-| `tmux select-window -t <name>` | Switch to existing window |
-| `tmux new-window -c <dir> -n <name>` | Create new window with working dir and name |
-| `tmux kill-window -t <index>` | Close window by index |
-| `tmux send-keys -t <name> <keys> Enter` | Send keystrokes to a window (used by hooks) |
+| `tmux has-session -t "=<name>"` | Check if session exists (exact match) |
+| `tmux new-session -d -s <name> -c <dir>` | Create new detached session with working dir |
+| `tmux switch-client -t <name>` | Switch current client to session |
+| `tmux list-sessions -F '#{session_name}'` | List all session names |
+| `tmux kill-session -t "=<name>"` | Close session by name (exact match) |
+| `tmux send-keys -t <name> <keys> Enter` | Send keystrokes to a session (used by hooks) |
 | `tmux capture-pane -t <name> -p -S -N` | Capture last N lines of pane output (used by hooks) |

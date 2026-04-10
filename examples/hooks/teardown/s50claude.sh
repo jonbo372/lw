@@ -4,14 +4,14 @@
 # Place this in .lw/teardown/ (repo-local) or ~/.lw/teardown/ (global).
 # Requires: claude CLI, tmux
 
-[[ -n "$LW_TMUX_WINDOW" ]] || exit 0
+[[ -n "$LW_TMUX_SESSION" ]] || exit 0
 
 # Ask claude to exit gracefully
-tmux send-keys -t "$LW_TMUX_WINDOW" "/exit" Enter
+tmux send-keys -t "$LW_TMUX_SESSION" "/exit" Enter
 sleep 2
 
 # Capture the pane content and extract the session ID
-SESSION_ID=$(tmux capture-pane -t "$LW_TMUX_WINDOW" -p -S -50 \
+SESSION_ID=$(tmux capture-pane -t "$LW_TMUX_SESSION" -p -S -50 \
   | grep -oP '(?<=Session: )\S+' | tail -1)
 
 if [[ -n "$SESSION_ID" ]]; then

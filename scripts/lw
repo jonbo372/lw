@@ -61,7 +61,7 @@ generate_silly_name() {
 # Scripts are named like s10foo.sh, s50bar.sh to control execution order.
 # Global hooks run first, then repo-local hooks.
 # Exported env vars: LW_WORKTREE_DIR, LW_BRANCH, LW_TICKET, LW_REPO_NAME, LW_ACTION,
-#                    LW_TMUX_WINDOW (set if running inside tmux)
+#                    LW_TMUX_SESSION (set if running inside tmux)
 run_hooks() {
   local phase="$1"  # "setup" or "teardown"
   local global_dir="$HOME/.lw/$phase"
@@ -82,7 +82,7 @@ run_hooks() {
   export LW_TICKET="${TICKET:-}"
   export LW_REPO_NAME="${REPO_NAME:-}"
   export LW_ACTION="$phase"
-  export LW_TMUX_WINDOW="${TMUX_WINDOW_NAME:-}"
+  export LW_TMUX_SESSION="${TMUX_SESSION_NAME:-}"
 
   for script in "${scripts[@]}"; do
     info "Running $phase hook: $(basename "$script")…"
@@ -137,21 +137,20 @@ if [[ "${1:-}" == "review" ]]; then
     info "Done."
   fi
 
-  # ── tmux: open a new window for the review ────────────────────────────────
-  TMUX_WINDOW_NAME=""
+  # ── tmux: create a new session for the review ─────────────────────────────
+  TMUX_SESSION_NAME=""
   if [[ -n "${TMUX:-}" ]]; then
-    TMUX_WINDOW_NAME="[${REPO_NAME}] review: ${BRANCH}"
-    TMUX_WINDOW_NAME="${TMUX_WINDOW_NAME:0:50}"
+    TMUX_SESSION_NAME="[${REPO_NAME}] review- ${BRANCH}"
+    TMUX_SESSION_NAME="${TMUX_SESSION_NAME//[:\.]/-}"
+    TMUX_SESSION_NAME="${TMUX_SESSION_NAME:0:50}"
 
-    EXISTING=$(tmux list-windows -F '#{window_name}' 2>/dev/null \
-      | grep -Fx "$TMUX_WINDOW_NAME" || true)
-
-    if [[ -n "$EXISTING" ]]; then
-      info "tmux window '$TMUX_WINDOW_NAME' already exists — switching to it…"
-      tmux select-window -t "$TMUX_WINDOW_NAME"
+    if tmux has-session -t "=${TMUX_SESSION_NAME}" 2>/dev/null; then
+      info "tmux session '$TMUX_SESSION_NAME' already exists — switching to it…"
+      tmux switch-client -t "$TMUX_SESSION_NAME"
     else
-      info "Creating tmux window '$TMUX_WINDOW_NAME'…"
-      tmux new-window -c "$WORKTREE_DIR" -n "$TMUX_WINDOW_NAME"
+      info "Creating tmux session '$TMUX_SESSION_NAME'…"
+      tmux new-session -d -s "$TMUX_SESSION_NAME" -c "$WORKTREE_DIR"
+      tmux switch-client -t "$TMUX_SESSION_NAME"
     fi
   fi
 
@@ -220,13 +219,18 @@ if [[ "${1:-}" == "done" ]]; then
     fi
   fi
 
-  # ── Resolve the tmux window name (needed by hooks and for closing) ───────
-  TMUX_WINDOW_NAME=""
-  TMUX_WINDOW_INDEX=""
+  # ── Resolve the tmux session name (needed by hooks and for closing) ──────
+  TMUX_SESSION_NAME=""
   if [[ -n "${TMUX:-}" ]]; then
-    read -r TMUX_WINDOW_INDEX TMUX_WINDOW_NAME < <(
-      tmux list-windows -F '#{window_index} #{window_name}' 2>/dev/null \
-        | awk -v t="$WINDOW_PREFIX" 'index($0, t) { print $1, substr($0, index($0,$2)); exit }'
+    local sanitized_prefix="${WINDOW_PREFIX//[:\.]/-}"
+    TMUX_SESSION_NAME=$(
+      tmux list-sessions -F '#{session_name}' 2>/dev/null \
+        | while IFS= read -r name; do
+            if [[ "$name" == *"$sanitized_prefix"* ]]; then
+              echo "$name"
+              break
+            fi
+          done
     ) || true
   fi
 
@@ -262,13 +266,13 @@ if [[ "${1:-}" == "done" ]]; then
     fi
   fi
 
-  # ── Close the tmux window ─────────────────────────────────────────────────
+  # ── Close the tmux session ────────────────────────────────────────────────
   if [[ -n "${TMUX:-}" ]]; then
-    if [[ -n "$TMUX_WINDOW_INDEX" ]]; then
-      info "Closing tmux window $TMUX_WINDOW_INDEX…"
-      tmux kill-window -t "$TMUX_WINDOW_INDEX"
+    if [[ -n "$TMUX_SESSION_NAME" ]]; then
+      info "Closing tmux session '$TMUX_SESSION_NAME'…"
+      tmux kill-session -t "=${TMUX_SESSION_NAME}"
     else
-      info "No tmux window found matching '$WINDOW_PREFIX'."
+      info "No tmux session found matching '$WINDOW_PREFIX'."
     fi
   fi
 
@@ -443,21 +447,20 @@ else
   info "Done."
 fi
 
-# ── tmux: create a new window, name it, and switch to it ─────────────────────
-TMUX_WINDOW_NAME=""
+# ── tmux: create a new session and switch to it ──────────────────────────────
+TMUX_SESSION_NAME=""
 if [[ -n "${TMUX:-}" ]]; then
-  TMUX_WINDOW_NAME="[${REPO_NAME}] ${SAFE_LABEL}: ${TITLE}"
-  TMUX_WINDOW_NAME="${TMUX_WINDOW_NAME:0:50}"
+  TMUX_SESSION_NAME="[${REPO_NAME}] ${SAFE_LABEL}- ${TITLE}"
+  TMUX_SESSION_NAME="${TMUX_SESSION_NAME//[:\.]/-}"
+  TMUX_SESSION_NAME="${TMUX_SESSION_NAME:0:50}"
 
-  EXISTING=$(tmux list-windows -F '#{window_name}' 2>/dev/null \
-    | grep -Fx "$TMUX_WINDOW_NAME" || true)
-
-  if [[ -n "$EXISTING" ]]; then
-    info "tmux window '$TMUX_WINDOW_NAME' already exists — switching to it…"
-    tmux select-window -t "$TMUX_WINDOW_NAME"
+  if tmux has-session -t "=${TMUX_SESSION_NAME}" 2>/dev/null; then
+    info "tmux session '$TMUX_SESSION_NAME' already exists — switching to it…"
+    tmux switch-client -t "$TMUX_SESSION_NAME"
   else
-    info "Creating tmux window '$TMUX_WINDOW_NAME'…"
-    tmux new-window -c "$WORKTREE_DIR" -n "$TMUX_WINDOW_NAME"
+    info "Creating tmux session '$TMUX_SESSION_NAME'…"
+    tmux new-session -d -s "$TMUX_SESSION_NAME" -c "$WORKTREE_DIR"
+    tmux switch-client -t "$TMUX_SESSION_NAME"
   fi
 fi
 

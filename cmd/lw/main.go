@@ -51,14 +51,14 @@ func newNewCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "new",
-		Short: "Create a new git worktree with a tmux window",
-		Long: `Create a new git worktree with a new tmux window.
+		Short: "Create a new git worktree with a tmux session",
+		Long: `Create a new git worktree with a new tmux session.
 
-By default, generates a silly-name for the branch and tmux window.
+By default, generates a silly-name for the branch and tmux session.
 
 Naming precedence (highest to lowest):
-  --name              Uses value as branch, worktree, and tmux window name
-  --branch_name       Uses value as branch; tmux window derived from ticket or branch
+  --name              Uses value as branch, worktree, and tmux session name
+  --branch_name       Uses value as branch; tmux session derived from ticket or branch
   --ticket            Uses Linear gitBranchName as branch name
   (none)              Generates a silly-name`,
 		Args: cobra.NoArgs,
@@ -71,7 +71,7 @@ Naming precedence (highest to lowest):
 	cmd.Flags().StringVar(&flagTicket, "ticket", "", "Linear ticket ID to fetch branch name from")
 	cmd.Flags().StringVar(&flagName, "name", "", "Name for branch, worktree, and tmux window")
 	cmd.Flags().StringVar(&flagBranchName, "branch_name", "", "Branch name (overrides ticket branch)")
-	cmd.Flags().BoolVar(&flagCurrentTmuxWindow, "current-tmux-window", false, "Stay in current tmux window")
+	cmd.Flags().BoolVar(&flagCurrentTmuxWindow, "current-tmux-window", false, "Stay in current tmux session")
 
 	return cmd
 }
@@ -83,7 +83,7 @@ func newContinueCmd() *cobra.Command {
 		Use:   "continue <session_identifier>",
 		Short: "Continue a previous session",
 		Long: `Continue a previous session by locating an existing git worktree
-and opening a tmux window pointing to it.
+and opening a tmux session pointing to it.
 
 The session identifier can be a ticket ID, name, or full worktree path.
 It is matched against the output of 'git worktree list'.`,
@@ -94,7 +94,7 @@ It is matched against the output of 'git worktree list'.`,
 		},
 	}
 
-	cmd.Flags().BoolVar(&flagCurrentTmuxWindow, "current-tmux-window", false, "Stay in current tmux window")
+	cmd.Flags().BoolVar(&flagCurrentTmuxWindow, "current-tmux-window", false, "Stay in current tmux session")
 
 	return cmd
 }
@@ -105,7 +105,7 @@ func newDoneCmd() *cobra.Command {
 		Short: "Tear down a session",
 		Long: `Tear down a session. Resolves the session identifier against
 'git worktree list', warns about uncommitted/unpushed changes,
-removes the worktree, and kills the associated tmux window.
+removes the worktree, and kills the associated tmux session.
 
 Handles all worktree types including review worktrees.`,
 		Args: cobra.ExactArgs(1),

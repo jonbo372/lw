@@ -15,7 +15,7 @@ type Env struct {
 	Ticket      string
 	RepoName    string
 	Phase       string // "setup" or "teardown"
-	TmuxWindow  string
+	TmuxSession string
 }
 
 // Run executes hook scripts from ~/.lw/<phase>/ and <gitRoot>/.lw/<phase>/ in sorted order.
@@ -56,7 +56,7 @@ func Run(phase, gitRoot string, env Env) error {
 		"LW_TICKET="+env.Ticket,
 		"LW_REPO_NAME="+env.RepoName,
 		"LW_ACTION="+env.Phase,
-		"LW_TMUX_WINDOW="+env.TmuxWindow,
+		"LW_TMUX_SESSION="+env.TmuxSession,
 	)
 
 	workDir := env.WorktreeDir

@@ -54,15 +54,15 @@ func cmdReview(args []string) {
 		info("Done.")
 	}
 
-	windowName := fmt.Sprintf("[%s] review: %s", repoName, branch)
-	tmuxWindow := tmuxCreateOrSwitchInfo(windowName, worktreeDir)
+	sessionName := fmt.Sprintf("[%s] review: %s", repoName, branch)
+	tmuxSession := tmuxCreateOrSwitchInfo(sessionName, worktreeDir)
 
 	if err := hook.Run("setup", gitRoot, hook.Env{
 		WorktreeDir: worktreeDir,
 		Branch:      branch,
 		RepoName:    repoName,
 		Phase:       "setup",
-		TmuxWindow:  tmuxWindow,
+		TmuxSession: tmuxSession,
 	}); err != nil {
 		die("%v", err)
 	}
@@ -74,12 +74,12 @@ func tmuxCreateOrSwitchInfo(name, dir string) string {
 	if !tmux.Active() {
 		return ""
 	}
-	if len(name) > tmux.MaxWindowNameLen {
-		name = name[:tmux.MaxWindowNameLen]
+	if len(name) > tmux.MaxNameLen {
+		name = name[:tmux.MaxNameLen]
 	}
-	windowName := tmux.CreateOrSwitch(name, dir)
-	if windowName != "" {
-		info("tmux window '%s' ready.", windowName)
+	sessionName := tmux.CreateOrSwitch(name, dir)
+	if sessionName != "" {
+		info("tmux session '%s' ready.", sessionName)
 	}
-	return windowName
+	return sessionName
 }

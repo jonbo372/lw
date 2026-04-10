@@ -20,58 +20,65 @@ func Active() bool {
 	return os.Getenv("TMUX") != ""
 }
 
-// MaxWindowNameLen is the maximum length for a tmux window name.
-const MaxWindowNameLen = 50
+// MaxNameLen is the maximum length for a tmux session name.
+const MaxNameLen = 50
 
-// CreateOrSwitch opens a new tmux window or switches to an existing one.
-// Returns the window name used, or "" if not in tmux.
+// sanitizeName replaces characters that are special in tmux target syntax.
+// Colons and periods are used as separators (session:window.pane), so they
+// must not appear in session names.
+func sanitizeName(name string) string {
+	name = strings.ReplaceAll(name, ":", "-")
+	name = strings.ReplaceAll(name, ".", "-")
+	return name
+}
+
+// CreateOrSwitch creates a new tmux session or switches to an existing one.
+// Returns the session name used, or "" if not in tmux.
 func CreateOrSwitch(name, dir string) string {
 	if !Active() {
 		return ""
 	}
-	if len(name) > MaxWindowNameLen {
-		name = name[:MaxWindowNameLen]
+	name = sanitizeName(name)
+	if len(name) > MaxNameLen {
+		name = name[:MaxNameLen]
 	}
 
-	out, _ := run("list-windows", "-F", "#{window_name}")
-	for _, line := range strings.Split(out, "\n") {
-		if line == name {
-			run("select-window", "-t", name)
-			return name
-		}
+	// Check if session already exists (exact match via = prefix)
+	if exec.Command("tmux", "has-session", "-t", "="+name).Run() == nil {
+		run("switch-client", "-t", name)
+		return name
 	}
 
-	run("new-window", "-c", dir, "-n", name)
+	run("new-session", "-d", "-s", name, "-c", dir)
+	run("switch-client", "-t", name)
 	return name
 }
 
-// FindWindow returns the index and name of the first window whose name contains prefix.
-func FindWindow(prefix string) (index, name string) {
+// FindSession returns the name of the first session whose name contains prefix.
+func FindSession(prefix string) string {
 	if !Active() {
-		return "", ""
+		return ""
 	}
-	out, _ := run("list-windows", "-F", "#{window_index} #{window_name}")
+	prefix = sanitizeName(prefix)
+	out, _ := run("list-sessions", "-F", "#{session_name}")
 	for _, line := range strings.Split(out, "\n") {
 		if strings.Contains(line, prefix) {
-			parts := strings.SplitN(line, " ", 2)
-			if len(parts) == 2 {
-				return parts[0], parts[1]
-			}
+			return line
 		}
 	}
-	return "", ""
+	return ""
 }
 
-// KillWindow closes the tmux window at the given index.
-func KillWindow(index string) {
-	run("kill-window", "-t", index)
+// KillSession closes the tmux session with the given name.
+func KillSession(name string) {
+	run("kill-session", "-t", "="+name)
 }
 
-// SendKeys sends text to a tmux window followed by Enter.
+// SendKeys sends text to a tmux session followed by Enter.
 // Does nothing if not in a tmux session.
-func SendKeys(window, text string) {
+func SendKeys(target, text string) {
 	if !Active() {
 		return
 	}
-	run("send-keys", "-t", window, text, "Enter")
+	run("send-keys", "-t", target, text, "Enter")
 }

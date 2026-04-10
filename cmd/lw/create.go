@@ -145,11 +145,11 @@ func cmdNew(ticket, name, branchName string, currentTmuxWindow bool) {
 		info("Done.")
 	}
 
-	// tmux window
-	var tmuxWindow string
+	// tmux session
+	var tmuxSession string
 	if !currentTmuxWindow {
-		windowName := fmt.Sprintf("[%s] %s: %s", repoName, tmuxWindowLabel, title)
-		tmuxWindow = tmuxCreateOrSwitchInfo(windowName, worktreeDir)
+		sessionName := fmt.Sprintf("[%s] %s: %s", repoName, tmuxWindowLabel, title)
+		tmuxSession = tmuxCreateOrSwitchInfo(sessionName, worktreeDir)
 	}
 
 	// Persist session metadata
@@ -159,7 +159,7 @@ func cmdNew(ticket, name, branchName string, currentTmuxWindow bool) {
 		Branch:      branch,
 		Ticket:      ticket,
 		WorktreeDir: worktreeDir,
-		TmuxWindow:  tmuxWindow,
+		TmuxSession: tmuxSession,
 	}
 	sessionPath, err := session.Create(sessionsDir, repoName, sessionID, sess)
 	if err != nil {
@@ -179,7 +179,7 @@ func cmdNew(ticket, name, branchName string, currentTmuxWindow bool) {
 		Ticket:      ticket,
 		RepoName:    repoName,
 		Phase:       "setup",
-		TmuxWindow:  tmuxWindow,
+		TmuxSession: tmuxSession,
 	}); err != nil {
 		die("%v", err)
 	}

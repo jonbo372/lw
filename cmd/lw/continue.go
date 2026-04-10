@@ -13,7 +13,7 @@ import (
 )
 
 // cmdContinue implements the `lw continue <session_identifier>` subcommand.
-// It locates an existing git worktree and opens a tmux window pointing to it.
+// It locates an existing git worktree and opens a tmux session pointing to it.
 func cmdContinue(identifier string, currentTmuxWindow bool) {
 	gitRoot, err := git.MainRoot()
 	if err != nil {
@@ -45,21 +45,21 @@ func cmdContinue(identifier string, currentTmuxWindow bool) {
 
 	info("Continuing session in %s (branch: %s)", worktreeDir, branch)
 
-	// tmux window
-	var tmuxWindow string
+	// tmux session
+	var tmuxSession string
 	if !currentTmuxWindow {
-		windowName := fmt.Sprintf("[%s] %s", repoName, dirName)
-		tmuxWindow = tmuxCreateOrSwitchInfo(windowName, worktreeDir)
+		sessionName := fmt.Sprintf("[%s] %s", repoName, dirName)
+		tmuxSession = tmuxCreateOrSwitchInfo(sessionName, worktreeDir)
 	}
 
-	// Print saved Claude session ID to tmux window if available
-	if tmuxWindow != "" {
+	// Print saved Claude session ID to tmux session if available
+	if tmuxSession != "" {
 		sess, err := session.Load(config.SessionsDir(), repoName, dirName)
 		if err == nil && sess != nil && sess.ClaudeSessionID != "" {
 			// Strip newlines to prevent command injection via tmux send-keys
 			safeID := strings.ReplaceAll(strings.ReplaceAll(sess.ClaudeSessionID, "\n", ""), "\r", "")
 			info("Found Claude session: %s", safeID)
-			tmux.SendKeys(tmuxWindow, fmt.Sprintf("# Previous Claude session: %s", safeID))
+			tmux.SendKeys(tmuxSession, fmt.Sprintf("# Previous Claude session: %s", safeID))
 		}
 	}
 
@@ -69,7 +69,7 @@ func cmdContinue(identifier string, currentTmuxWindow bool) {
 		Branch:      branch,
 		RepoName:    repoName,
 		Phase:       "setup",
-		TmuxWindow:  tmuxWindow,
+		TmuxSession: tmuxSession,
 	}); err != nil {
 		die("%v", err)
 	}

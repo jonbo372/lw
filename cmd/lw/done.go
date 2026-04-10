@@ -15,7 +15,7 @@ import (
 // cmdDone implements the `lw done <session_identifier>` subcommand.
 // It resolves the session identifier against `git worktree list`,
 // warns about uncommitted/unpushed changes, removes the worktree,
-// and kills the associated tmux window.
+// and kills the associated tmux session.
 // Handles all worktree types including review worktrees.
 func cmdDone(identifier string) {
 	gitRoot, err := git.MainRoot()
@@ -67,9 +67,9 @@ func cmdDone(identifier string) {
 		}
 	}
 
-	// Resolve tmux window
-	windowPrefix := fmt.Sprintf("[%s] %s", repoName, dirName)
-	tmuxWindowIndex, tmuxWindowName := tmux.FindWindow(windowPrefix)
+	// Resolve tmux session
+	sessionPrefix := fmt.Sprintf("[%s] %s", repoName, dirName)
+	tmuxSessionName := tmux.FindSession(sessionPrefix)
 
 	// Run teardown hooks
 	if err := hook.Run("teardown", gitRoot, hook.Env{
@@ -77,7 +77,7 @@ func cmdDone(identifier string) {
 		Branch:      branch,
 		RepoName:    repoName,
 		Phase:       "teardown",
-		TmuxWindow:  tmuxWindowName,
+		TmuxSession: tmuxSessionName,
 	}); err != nil {
 		die("%v", err)
 	}
@@ -109,13 +109,13 @@ func cmdDone(identifier string) {
 		}
 	}
 
-	// Close tmux window
+	// Close tmux session
 	if tmux.Active() {
-		if tmuxWindowIndex != "" {
-			info("Closing tmux window %s…", tmuxWindowIndex)
-			tmux.KillWindow(tmuxWindowIndex)
+		if tmuxSessionName != "" {
+			info("Closing tmux session '%s'…", tmuxSessionName)
+			tmux.KillSession(tmuxSessionName)
 		} else {
-			info("No tmux window found matching '%s'.", windowPrefix)
+			info("No tmux session found matching '%s'.", sessionPrefix)
 		}
 	}
 

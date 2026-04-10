@@ -1,11 +1,11 @@
 # Linear Worktrees
 
-A CLI tool that creates isolated git worktrees for Linear tickets, each in its own tmux window.
+A CLI tool that creates isolated git worktrees for Linear tickets, each in its own tmux session.
 
 ## Prerequisites
 
 - `go`, `make`, `git`
-- `tmux` (optional — for automatic window management)
+- `tmux` (optional — for automatic session management)
 - One or more [Linear API keys](https://linear.app/settings/api) exported as `LINEAR_API_KEY*` environment variables
 
 ## Installation
@@ -46,21 +46,21 @@ Run all commands from within an existing git repository.
 lw new --ticket ENG-123
 ```
 
-Fetches the branch name and title from Linear, creates (or fetches) the branch, sets up a worktree at `$WORKTREE_HOME/<repo>/<TICKET>`, and opens a tmux window for it.
+Fetches the branch name and title from Linear, creates (or fetches) the branch, sets up a worktree at `$WORKTREE_HOME/<repo>/<TICKET>`, and opens a tmux session for it.
 
 #### Flags
 
 | Flag | Description |
 |---|---|
 | `--ticket` | Linear ticket ID to fetch branch name from |
-| `--name` | Name for branch, worktree, and tmux window |
+| `--name` | Name for branch, worktree, and tmux session |
 | `--branch_name` | Branch name (overrides ticket branch) |
-| `--current-tmux-window` | Stay in current tmux window instead of creating a new one |
+| `--current-tmux-window` | Stay in current tmux session instead of creating a new one |
 
 **Naming precedence** (highest to lowest):
 
-1. `--name` — uses value as branch, worktree directory, and tmux window name
-2. `--branch_name` — uses value as branch; tmux window derived from ticket or branch
+1. `--name` — uses value as branch, worktree directory, and tmux session name
+2. `--branch_name` — uses value as branch; tmux session derived from ticket or branch
 3. `--ticket` — uses Linear `gitBranchName` as branch name
 4. *(none)* — generates a random silly-name for a scratch worktree
 
@@ -70,11 +70,11 @@ Fetches the branch name and title from Linear, creates (or fetches) the branch, 
 lw continue ENG-123
 ```
 
-Locates an existing worktree matching the session identifier and opens a tmux window for it. The identifier can be a ticket ID, name, or worktree path.
+Locates an existing worktree matching the session identifier and opens a tmux session for it. The identifier can be a ticket ID, name, or worktree path.
 
 | Flag | Description |
 |---|---|
-| `--current-tmux-window` | Stay in current tmux window |
+| `--current-tmux-window` | Stay in current tmux session |
 
 ### List all sessions
 
@@ -103,7 +103,7 @@ Checks out an existing branch into a review worktree without needing a Linear ti
 lw done ENG-123
 ```
 
-Resolves the session identifier against `git worktree list`, removes the worktree, deletes the local branch (unless still in use by another worktree), and closes the tmux window. Warns if there are uncommitted or unpushed changes. Handles all worktree types including review worktrees.
+Resolves the session identifier against `git worktree list`, removes the worktree, deletes the local branch (unless still in use by another worktree), and closes the tmux session. Warns if there are uncommitted or unpushed changes. Handles all worktree types including review worktrees.
 
 ## Hooks
 
@@ -140,9 +140,9 @@ The following environment variables are available to hook scripts:
 | `LW_TICKET` | Ticket ID (empty for review worktrees) |
 | `LW_REPO_NAME` | Repository directory name |
 | `LW_ACTION` | `setup` or `teardown` |
-| `LW_TMUX_WINDOW` | tmux window name (empty if not running in tmux) |
+| `LW_TMUX_SESSION` | tmux session name (empty if not running in tmux) |
 
-Setup hooks run **after** the tmux window is created, so they can send commands to it via `tmux send-keys`. Teardown hooks run **before** the window is closed.
+Setup hooks run **after** the tmux session is created, so they can send commands to it via `tmux send-keys`. Teardown hooks run **before** the session is closed.
 
 If any hook exits non-zero, `lw` aborts immediately.
 
@@ -150,12 +150,12 @@ If any hook exits non-zero, `lw` aborts immediately.
 
 The `examples/hooks/` directory contains a pair of hooks that automatically manage a Claude Code session per worktree.
 
-**`setup/s50claude.sh`** — runs after the tmux window is created:
+**`setup/s50claude.sh`** — runs after the tmux session is created:
 1. Checks for a saved session ID in `~/.lw/sessions/<repo>/<ticket>`
-2. Sends `claude --dangerously-skip-permissions` (with `--resume <session-id>` if a previous session exists) to the tmux window via `tmux send-keys`
+2. Sends `claude --dangerously-skip-permissions` (with `--resume <session-id>` if a previous session exists) to the tmux session via `tmux send-keys`
 
-**`teardown/s50claude.sh`** — runs before the tmux window is closed:
-1. Sends `/exit` to the tmux window to gracefully stop Claude
+**`teardown/s50claude.sh`** — runs before the tmux session is closed:
+1. Sends `/exit` to the tmux session to gracefully stop Claude
 2. Waits for Claude to exit, then captures the pane content
 3. Extracts the session ID and saves it to `~/.lw/sessions/<repo>/<ticket>`
 

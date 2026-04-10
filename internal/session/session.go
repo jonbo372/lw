@@ -17,7 +17,7 @@ type Session struct {
 	Branch          string    `json:"branch"`
 	Ticket          string    `json:"ticket"`
 	WorktreeDir     string    `json:"worktreeDir"`
-	TmuxWindow      string    `json:"tmuxWindow"`
+	TmuxSession     string    `json:"tmuxSession"`
 	CreatedAt       time.Time `json:"createdAt"`
 	ClaudeSessionID string    `json:"claudeSessionId"`
 }

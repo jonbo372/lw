@@ -15,7 +15,7 @@ func TestCreate_WritesJSONFile(t *testing.T) {
 		Branch:      "jonbo372/VOI-42/add-auth",
 		Ticket:      "VOI-42",
 		WorktreeDir: "/home/user/.superclaude/repo/VOI-42",
-		TmuxWindow:  "[repo] VOI-42: Add auth",
+		TmuxSession:  "[repo] VOI-42: Add auth",
 	}
 
 	path, err := Create(dir, "myrepo", "VOI-42", s)
@@ -47,8 +47,8 @@ func TestCreate_WritesJSONFile(t *testing.T) {
 	if loaded.WorktreeDir != "/home/user/.superclaude/repo/VOI-42" {
 		t.Errorf("expected worktreeDir, got %s", loaded.WorktreeDir)
 	}
-	if loaded.TmuxWindow != "[repo] VOI-42: Add auth" {
-		t.Errorf("expected tmuxWindow, got %s", loaded.TmuxWindow)
+	if loaded.TmuxSession != "[repo] VOI-42: Add auth" {
+		t.Errorf("expected tmuxSession, got %s", loaded.TmuxSession)
 	}
 	if loaded.ClaudeSessionID != "" {
 		t.Errorf("expected empty claudeSessionId, got %s", loaded.ClaudeSessionID)
@@ -69,7 +69,7 @@ func TestCreate_ScratchSession(t *testing.T) {
 		Branch:      "fuzzy_cobra",
 		Ticket:      "",
 		WorktreeDir: "/home/user/.superclaude/repo/fuzzy_cobra",
-		TmuxWindow:  "[repo] fuzzy_cobra: scratch",
+		TmuxSession:  "[repo] fuzzy_cobra: scratch",
 	}
 
 	path, err := Create(dir, "myrepo", "fuzzy_cobra", s)
@@ -132,7 +132,7 @@ func TestLoad_ExistingSession(t *testing.T) {
 		Branch:           "test-branch",
 		Ticket:           "VOI-99",
 		WorktreeDir:      "/tmp/wt",
-		TmuxWindow:       "win",
+		TmuxSession:       "win",
 		CreatedAt:        time.Now().UTC(),
 		ClaudeSessionID:  "abc-123-def",
 	}
@@ -192,7 +192,7 @@ func TestUpdateClaudeSessionID(t *testing.T) {
 		Branch:      "test-branch",
 		Ticket:      "VOI-99",
 		WorktreeDir: "/tmp/wt",
-		TmuxWindow:  "win",
+		TmuxSession:  "win",
 	}
 
 	_, err := Create(dir, "myrepo", "VOI-99", s)
@@ -440,7 +440,7 @@ func TestDelete_ExistingSession(t *testing.T) {
 		Branch:      "test-branch",
 		Ticket:      "VOI-42",
 		WorktreeDir: "/tmp/wt",
-		TmuxWindow:  "win",
+		TmuxSession:  "win",
 	}
 
 	path, err := Create(dir, "myrepo", "VOI-42", s)

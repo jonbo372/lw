@@ -9,4 +9,4 @@ Used by `codebase-explorer`, `architect`, and `backend-engineer` to load relevan
 | worktree, branch, git, checkout, fetch, merge | Git/Worktrees.md | Git worktree lifecycle and branch management |
 | hook, setup, teardown, LW_*, s10, s50 | Hooks/HookSystem.md | Setup/teardown hook execution and env vars |
 | Linear, API, GraphQL, ticket, branchName | Integration/LinearAPI.md | Linear GraphQL API integration |
-| tmux, window, session, pane | Tmux/WindowManagement.md | tmux window lifecycle management |
+| tmux, window, session, pane | Tmux/WindowManagement.md | tmux session lifecycle management |
